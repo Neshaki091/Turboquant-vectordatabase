@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TurboQuant Web UI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19; --panel-bg: #151b2b; --text-main: #f3f4f6;
+            --text-muted: #9ca3af; --accent: #3b82f6; --accent-hover: #2563eb;
+            --danger: #ef4444; --danger-hover: #dc2626; --success: #10b981;
+            --border: #1f2937;
+        }
+        body {
+            margin: 0; padding: 0; background-color: var(--bg-color); color: var(--text-main);
+            font-family: 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden;
+        }
+        .sidebar { width: 260px; background: var(--panel-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .logo { font-size: 1.4rem; font-weight: 800; color: white; padding: 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-list { padding: 15px; }
+        .nav-item { padding: 12px 15px; margin-bottom: 5px; border-radius: 8px; cursor: pointer; color: var(--text-muted); font-weight: 500; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
+        .nav-item:hover, .nav-item.active { background: #1e293b; color: white; }
+        .main-content { flex: 1; overflow-y: auto; background: var(--bg-color); }
+        .header { padding: 20px 30px; border-bottom: 1px solid var(--border); background: var(--panel-bg); display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; }
+        .content-body { padding: 30px; }
+        .tab-content { display: none; animation: fadeIn 0.3s; }
+        .tab-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .card { background: var(--panel-bg); padding: 25px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
+        h2 { margin-top: 0; font-weight: 600; font-size: 1.1rem; color: white; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; color: var(--text-muted); font-size: 0.9rem; }
+        input, textarea { width: 100%; padding: 10px 12px; background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border); border-radius: 6px; font-family: monospace; font-size: 0.95rem; box-sizing: border-box; transition: border-color 0.2s; }
+        input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+        button { background: var(--accent); color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        button:hover { background: var(--accent-hover); }
+        button.danger { background: var(--danger); }
+        button.danger:hover { background: var(--danger-hover); }
+        button.small { padding: 6px 10px; font-size: 0.85rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { background: rgba(255,255,255,0.03); color: var(--text-muted); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+        pre { background: #0f131f; padding: 15px; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto; color: #a78bfa; font-size: 0.9rem; margin: 0; }
+        .stat-badge { display: inline-block; padding: 5px 10px; background: rgba(16, 185, 129, 0.1); color: var(--success); border-radius: 20px; font-size: 0.85rem; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.2); }
+        
+        /* Modal Styles */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: var(--panel-bg); padding: 30px; border-radius: 12px; border: 1px solid var(--border); width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
+        .modal-header h2 { border: none; padding: 0; margin: 0; }
+        .close-btn { background: transparent; color: var(--text-muted); font-size: 1.2rem; padding: 0; margin: 0; cursor: pointer; }
+        .close-btn:hover { background: transparent; color: white; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">🚀 TurboQuant</div>
+        <div class="nav-list">
+            <div class="nav-item active" onclick="switchTab('collections', this)">🗄️ Collections</div>
+            <div class="nav-item" onclick="switchTab('explorer', this); uiFetchAll()">🔍 Data Explorer (CRUD)</div>
+            <div class="nav-item" onclick="switchTab('console', this)">📡 REST Console</div>
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div class="header">
+            <h1 id="pageTitle">Collections Management</h1>
+            <div class="stat-badge">● Engine Online</div>
+        </div>
+
+        <div class="content-body">
+            <!-- TAB: COLLECTIONS -->
+            <div id="collections" class="tab-content active">
+                <div class="card">
+                    <h2>Active Collections</h2>
+                    <table>
+                        <thead><tr><th>Name</th><th>Status</th><th>Distance Metric</th><th>Actions</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td><strong style="color:white; font-size:1.1rem;">default</strong></td>
+                                <td><span style="color:var(--success);">● Green</span></td>
+                                <td>Cosine (AVX-256)</td>
+                                <td><button onclick="document.querySelector('.nav-item:nth-child(2)').click()">Manage Data</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB: DATA EXPLORER (CRUD) -->
+            <div id="explorer" class="tab-content">
+                <div class="card">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                        <h2 style="border:none; margin:0; padding:0;">🗃️ All Data Points</h2>
+                        <div>
+                            <button onclick="openModal()" style="margin-right:10px; background:var(--success);">➕ Add Vector</button>
+                            <button class="danger" onclick="uiClearAll()" style="margin-right:10px;">🗑️ Clear All Data</button>
+                            <button onclick="uiFetchAll()">🔄 Refresh Data</button>
+                        </div>
+                    </div>
+                    <div style="max-height: 250px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px;">
+                        <table style="margin-top:0;">
+                            <thead style="position: sticky; top: 0; background: var(--panel-bg); z-index: 10;">
+                                <tr>
+                                    <th width="10%">ID</th>
+                                    <th width="30%">Vector</th>
+                                    <th>Payload</th>
+                                    <th width="10%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="allPointsTable">
+                                <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Click Refresh Data to fetch vectors...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Search Vectors -->
+                <div class="card">
+                    <h2>🔍 Nearest Neighbor Search (KNN)</h2>
+                    <div style="display:flex; gap:10px; margin-bottom: 15px;">
+                        <input type="text" id="searchVec" value="[0.1, 0.2, 0.3, 0.4]" style="flex:1;">
+                        <input type="number" id="searchTopK" value="5" style="width:100px;" title="Top K">
+                        <button onclick="uiSearch()">Search</button>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th width="10%">Score</th>
+                                <th width="10%">ID</th>
+                                <th width="30%">Vector</th>
+                                <th>Payload</th>
+                            </tr>
+                        </thead>
+                        <tbody id="searchResultsTable">
+                            <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Perform a search to see results here...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB: REST CONSOLE -->
+            <div id="console" class="tab-content">
+                <div class="card">
+                    <h2>Raw HTTP Request</h2>
+                    <div class="form-group"><label>Endpoint</label><input type="text" id="rawUrl" value="/collections/default/search"></div>
+                    <div class="form-group"><label>JSON Body</label><textarea id="rawBody" rows="6">{ "vector": [0.1, 0.5, -0.2], "top_k": 3 }</textarea></div>
+                    <button onclick="uiRawReq()">Send POST Request</button>
+                    <h3 style="margin-top: 20px; font-size: 0.95rem; color: var(--text-muted);">Response:</h3>
+                    <pre id="rawResponse">Waiting for request...</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Vector Modal -->
+    <div id="addModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>➕ Add Point</h2>
+                <button class="close-btn" onclick="closeModal()">✕</button>
+            </div>
+            <div class="form-group">
+                <label>Point ID (Integer)</label>
+                <input type="number" id="addId" value="1001">
+            </div>
+            <div class="form-group">
+                <label>Vector (Array of floats)</label>
+                <input type="text" id="addVector" value="[0.1, 0.2, 0.3, 0.4]">
+            </div>
+            <div class="form-group">
+                <label>Payload (JSON Object)</label>
+                <textarea id="addPayload" rows="3">{"name": "TurboQuant", "type": "Database"}</textarea>
+            </div>
+            <button onclick="uiAddPoint()">Upsert Point</button>
+            <div id="addStatus" style="margin-top:10px; font-size:0.9rem;"></div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId, el) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            el.classList.add('active');
+            document.getElementById('pageTitle').innerText = el.innerText.substring(3);
+        }
+
+        function openModal() { document.getElementById('addModal').classList.add('active'); document.getElementById('addStatus').innerText = ''; }
+        function closeModal() { document.getElementById('addModal').classList.remove('active'); }
+
+        async function uiAddPoint() {
+            let id = parseInt(document.getElementById('addId').value);
+            let vector = JSON.parse(document.getElementById('addVector').value);
+            let payload = JSON.parse(document.getElementById('addPayload').value);
+            let status = document.getElementById('addStatus');
+            try {
+                let res = await fetch('/collections/default/points', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ id, vector, payload })
+                });
+                status.innerText = "✅ " + await res.text();
+                status.style.color = "var(--success)";
+                uiFetchAll(); // Auto refresh
+                setTimeout(closeModal, 1000);
+            } catch(e) {
+                status.innerText = "❌ Lỗi: " + e.message;
+                status.style.color = "var(--danger)";
+            }
+        }
+
+        async function deletePoint(id) {
+            if(!confirm("Xóa Vector ID: " + id + " ?")) return;
+            try {
+                let res = await fetch('/collections/default/points/' + id, { method: 'DELETE' });
+                uiFetchAll();
+            } catch(e) { alert("Lỗi: " + e.message); }
+        }
+
+        async function uiClearAll() {
+            if(!confirm("⚠️ CẢNH BÁO: Bạn có chắc chắn muốn xóa TOÀN BỘ Vector trong hệ thống không?")) return;
+            try {
+                let res = await fetch('/collections/default/points', { method: 'DELETE' });
+                alert(await res.text());
+                uiFetchAll();
+            } catch(e) { alert("Lỗi: " + e.message); }
+        }
+
+        async function uiFetchAll() {
+            let tbody = document.getElementById('allPointsTable');
+            tbody.innerHTML = '<tr><td colspan="4">Đang tải...</td></tr>';
+            try {
+                let res = await fetch('/collections/default/points');
+                let json = await res.json();
+                if(json.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Chưa có vector nào trong cơ sở dữ liệu.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = '';
+                json.forEach(item => {
+                    let tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="font-weight:bold;">${item.id}</td>
+                        <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.8rem;">[${item.vector.slice(0, 3).map(v => v.toFixed(3)).join(', ')}, ...]</pre></td>
+                        <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.85rem;">${JSON.stringify(item.payload, null, 2)}</pre></td>
+                        <td><button class="danger small" onclick="deletePoint(${item.id})">Xóa</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch(e) { tbody.innerHTML = `<tr><td colspan="4" style="color:var(--danger)">Lỗi: ${e.message}</td></tr>`; }
+        }
+
+        async function uiSearch() {
+            let vector = JSON.parse(document.getElementById('searchVec').value);
+            let top_k = parseInt(document.getElementById('searchTopK').value);
+            let tbody = document.getElementById('searchResultsTable');
+            tbody.innerHTML = '<tr><td colspan="4">Đang tìm kiếm...</td></tr>';
+            try {
+                let res = await fetch('/collections/default/search', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ vector, top_k })
+                });
+                let json = await res.json();
+                if(json.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Không tìm thấy kết quả nào. (Collection trống)</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = '';
+                json.forEach(item => {
+                    let tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="color:var(--success); font-weight:bold;">${item.score.toFixed(4)}</td>
+                        <td>${item.id}</td>
+                        <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.8rem;">[${item.vector.slice(0, 3).map(v => v.toFixed(3)).join(', ')}, ...]</pre></td>
+                        <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.85rem;">${JSON.stringify(item.payload, null, 2)}</pre></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch(e) { tbody.innerHTML = `<tr><td colspan="4" style="color:var(--danger)">Lỗi: ${e.message}</td></tr>`; }
+        }
+
+        async function uiRawReq() {
+            let url = document.getElementById('rawUrl').value;
+            let body = document.getElementById('rawBody').value;
+            let pre = document.getElementById('rawResponse');
+            pre.innerText = "Loading...";
+            try {
+                let res = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: body });
+                let text = await res.text();
+                try { pre.innerText = JSON.stringify(JSON.parse(text), null, 2); } 
+                catch { pre.innerText = text; }
+            } catch(e) { pre.innerText = e.message; }
+        }
+    </script>
+</body>
+</html>
