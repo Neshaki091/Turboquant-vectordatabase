@@ -2,5 +2,3 @@
 Cargo.lock
 *.exe
 *.pdb
-/data
-*.txt
