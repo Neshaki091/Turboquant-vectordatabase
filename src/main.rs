@@ -120,6 +120,13 @@ async fn main() {
     }
 
     println!("🚀 Khởi động TurboQuant Server (Phiên bản Độc Lập)...");
+    #[cfg(target_feature = "avx512f")]
+    println!("⚡ SIMD Hardware Optimization: AVX-512 Active");
+    #[cfg(all(target_feature = "avx2", not(target_feature = "avx512f")))]
+    println!("⚡ SIMD Hardware Optimization: AVX2 Active");
+    #[cfg(not(any(target_feature = "avx2", target_feature = "avx512f")))]
+    println!("⚠️ SIMD Hardware Optimization: None (Running in fallback scalar mode - make sure target-cpu=native is active)");
+    
     
     let mut init_engine = TQEngine::new();
     if std::path::Path::new("data/tq_index").exists() {

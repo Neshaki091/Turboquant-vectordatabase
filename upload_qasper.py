@@ -40,7 +40,7 @@ def main():
     print(f"\n[1] Cau hinh TurboQuant Index (IVF, 4-bit)...")
     config_url = args.url.replace("/points", "/config")
     try:
-        config_res = requests.post(config_url, json={"n_list": None, "quantize_bits": 4})
+        config_res = requests.post(config_url, json={"n_list": 256, "quantize_bits": 4})
         if config_res.status_code == 200:
             print(f">>> Cau hinh thanh cong: {config_res.text}")
         else:
