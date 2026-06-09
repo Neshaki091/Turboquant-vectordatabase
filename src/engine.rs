@@ -113,7 +113,7 @@ impl TQEngine {
                 "n_vectors": seg.n_vectors,
                 "dim": self.dim,
                 "quantize_bits": self.index_config.quantize_bits,
-                "n_list": self.index_config.n_list,
+                "n_list": seg.offsets_sl.len() - 1,
             });
             std::fs::write(format!("{}/metadata.json", dir_path), serde_json::to_string_pretty(&meta)?)?;
         }
@@ -312,8 +312,20 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
         }
 
         // 3. Phân cụm IVF (K-Means)
-        let default_n_list = if n < 1024 { 1 } else { ((n as f64).sqrt() as usize).max(1) };
-        let n_list = self.index_config.n_list.unwrap_or(default_n_list);
+        let default_n_list = if n < 2 {
+            1
+        } else {
+            let target = 2.0 * (n as f64).sqrt();
+            let log2_target = target.log2();
+            let p_lower = 2usize.pow(log2_target.floor() as u32);
+            let p_upper = 2usize.pow(log2_target.ceil() as u32);
+            if (target - p_lower as f64).abs() < (target - p_upper as f64).abs() {
+                p_lower
+            } else {
+                p_upper
+            }
+        };
+        let n_list = self.index_config.n_list.unwrap_or(default_n_list).min(n);
         let coarse_centroids = crate::turboquant::tq_kmeans_train(&x_arr, n, d, n_list, 15);
         let assignments = crate::turboquant::tq_assign_clusters(&x_arr, n, d, &coarse_centroids, n_list);
 
