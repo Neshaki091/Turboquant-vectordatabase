@@ -28,30 +28,49 @@ Bằng cách loại bỏ hoàn toàn các thư viện cồng kềnh (Python, C++
 
 ## 📊 So Sánh Hiệu Năng Thực Tế (Benchmark Results)
 
-*Thử nghiệm đo lường tần suất xử lý truy vấn mạng (QPS) và độ chính xác với tập dữ liệu **12,450 vectors (chiều 384)** của tập Qasper E5 trên CPU **Intel Core i5-10300H** (Batch Size = 2000):*
+*Thử nghiệm đo lường tần suất xử lý truy vấn mạng (QPS) và độ chính xác với tập dữ liệu **12,450 vectors (chiều 384)** của tập Qasper E5 trên CPU **Intel Core i5-10300H** (chạy thực tế độc lập):*
 
-### Biểu đồ tốc độ QPS (Càng dài càng nhanh)
+### Biểu đồ tốc độ QPS (Batch Size = 100, Càng dài càng nhanh)
 
 ```text
-Flat Search (Exact Match)     | █ 40.9 QPS (1.0x)
-TQ Binary (n_probe=92, Rerank)| ████████████████████████████ 1148.4 QPS (28.1x)
-TQ Binary (n_probe=92, No RR) | █████████████████████████████ 1173.6 QPS (28.7x)
-TQ Binary (n_probe=64, No RR) | ████████████████████████████████████ 1475.3 QPS (36.1x) 🚀
+Flat Search (Exact Match)      | █ 41.9 QPS (1.0x)
+TQ Binary (n_probe=92, Rerank) | ██████████████████████████ 1036.1 QPS (24.7x)
+TQ Binary (n_probe=92, No RR)  | ████████████████████████████ 1094.8 QPS (26.1x)
 ```
 
 ### Chi tiết các chỉ số cấu hình tìm kiếm
 
 | Cấu hình thuật toán / Giao thức | n_probe | Tái xếp hạng (Rerank) | QPS (JSON) | QPS (BINARY) | Lợi ích nhị phân | Overlap@16 (Độ bao phủ) | ANN Recall@1@16 |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Flat Search** (Exact Match) | - | - | 40.9 QPS | **40.9 QPS** | 1.0x | 100.0% | 100.0% |
-| **TQ (Tìm kiếm thô tối ưu)** | 64 | Tắt | 999.7 QPS | **1,475.3 QPS** | **+48%** | 88.38% | 100.0% |
-| **TQ (Tìm kiếm cân bằng)** | 92 | Tắt | 891.1 QPS | **1,173.6 QPS** | **+32%** | 89.12% | 100.0% |
-| **TQ (Tái xếp hạng ngữ nghĩa)**| 92 | **Bật (Factor=2)**| 885.7 QPS | **1,148.4 QPS** | **+30%** | **98.88%** 🎯 | **100.0%** |
+| **Flat Search** (Exact Match) | - | - | 41.9 QPS | **41.9 QPS** | 1.0x | 100.0% | 100.0% |
+| **TQ (Tìm kiếm thô)** | 92 | Tắt | 895.4 QPS | **1,094.8 QPS** | **+22.2%** | 87.19% | 100.0% |
+| **TQ (Tái xếp hạng tối giản)**| 92 | **Bật (Factor=2)** | 876.9 QPS | **1,026.6 QPS** | **+17.1%** | **97.88%** 🎯 | **100.0%** |
+| **TQ (Tái xếp hạng tối đa)**| 92 | **Bật (Factor=20)**| 816.8 QPS | **1,036.1 QPS** | **+26.8%** | **98.19%** 🎯 | **100.0%** |
 
 > [!IMPORTANT]
 > **Nhận xét cốt lõi từ thực nghiệm:**
-> 1. **Chi phí tái xếp hạng siêu nhỏ:** Khi kích hoạt bộ tái xếp hạng (Rerank Factor=2) ở cấu hình `n_probe=92`, độ bao phủ tập kết quả (Overlap@16) nhảy vọt từ **89.12% lên 98.88%** (gần như tiệm cận tuyệt đối 100% của Flat Search), trong khi thông lượng QPS chỉ giảm nhẹ **2.1%** (từ 1,173.6 QPS xuống 1,148.4 QPS).
-> 2. **Ưu thế tuyệt đối của Binary Protocol:** Giao thức nhị phân giúp tăng tốc độ xử lý thêm từ **30% đến 48%** so với giao thức JSON truyền thống nhờ việc loại bỏ hoàn toàn chi phí đóng gói/mở gói chuỗi ký tự UTF-8 trên CPU.
+> 1. **Chi phí tái xếp hạng siêu nhỏ:** Khi kích hoạt bộ tái xếp hạng (Rerank) ở cấu hình `n_probe=92`, độ bao phủ tập kết quả (Overlap@16) nhảy vọt từ **87.19% lên 98.19%** (gần như tiệm cận tuyệt đối 100% của Flat Search), trong khi thông lượng QPS chỉ giảm nhẹ **~5%** (từ 1,094.8 QPS xuống 1,036.1 QPS).
+> 2. **Ưu thế tuyệt đối của Binary Protocol:** Giao thức nhị phân giúp tăng tốc độ xử lý thêm từ **17% đến 26%** so với giao thức JSON truyền thống nhờ việc loại bỏ hoàn toàn chi phí đóng gói/mở gói chuỗi ký tự UTF-8 trên CPU.
+
+### ❓ Tại sao tốc độ QPS hiển thị đôi khi dao động (Lúc nhanh lúc chậm)?
+
+Khi chạy các benchmark liên tiếp, bạn có thể nhận thấy QPS của lượt đầu tiên thường thấp hơn các lượt sau (ví dụ: lượt đầu đạt 1066 QPS nhị phân, lượt sau lên 1094 QPS). Điều này xuất phát từ các yếu tố kỹ thuật sau:
+1. **Khởi tạo luồng Rayon/Tokio (Thread Warmup):** Rust sử dụng thư viện `Rayon` để xử lý song song hóa truy vấn lô (`par_iter`). Lần đầu tiên gọi API, các luồng (worker threads) trong Thread Pool cần thời gian khởi tạo hoặc đánh thức từ chế độ ngủ, tạo ra độ trễ ban đầu nhỏ.
+2. **Cơ chế OS Page Cache:** Khi hệ thống bắt đầu truy cập mảng lượng tử hóa và các ma trận xoay lưu trên RAM, nếu hệ điều hành chưa nạp hoặc đã giải phóng các trang bộ nhớ này (Page Cache Miss), nó sẽ tốn chi phí nhỏ để đọc từ bộ nhớ ảo. Các lượt chạy sau toàn bộ dữ liệu nằm trực tiếp trong bộ đệm CPU (L1/L2/L3) giúp tốc độ tìm kiếm đạt giới hạn vật lý phần cứng.
+3. **Độ ấm của Socket TCP (TCP Warmup):** Lượt chạy đầu tiên của Python Client cần thiết lập kết nối TCP mới tới Axum server. Các lượt chạy tiếp theo tận dụng lại TCP connection pool đang hoạt động (Keep-Alive) nên loại bỏ được độ trễ bắt tay mạng (3-way handshake).
+4. **Ảnh hưởng của kích thước lô nhỏ (`batch_size=100`):** Với tổng số chỉ 100 truy vấn, thời gian xử lý cực kỳ nhỏ (~0.09 giây). Do đó, chỉ một dao động cực nhỏ khoảng **15 - 20 mili-giây** của hệ điều hành (do tiến trình nền khác sử dụng CPU) cũng sẽ làm thay đổi hiển thị số QPS từ 650 QPS lên 890 QPS. Khi đo với `batch_size=2000`, thời gian chạy dài hơn sẽ giúp trung hòa các sai lệch nhỏ này, cho ra con số QPS ổn định và chính xác nhất.
+
+---
+
+## 📐 Cơ Chế Tự Động Tính n_list (IVF Centroids)
+
+Từ phiên bản mới nhất, TurboQuant tích hợp thuật toán phân hoạch cụm động thông minh:
+* Nếu người dùng cấu hình `n_list = null` (None) khi tạo Index, máy chủ sẽ tự động tính toán dựa trên quy mô số vector $N$:
+  $$\text{target} = 2 \times \sqrt{N}$$
+* Sau đó, hệ thống tìm **lũy thừa của 2 gần nhất** với giá trị $\text{target}$ (giới hạn tối đa bằng $N$).
+* **Ví dụ:** Với tập dữ liệu Qasper ($N = 12,450$):
+  $$\text{target} = 2 \times \sqrt{12,450} \approx 223.16 \implies \text{Lũy thừa 2 gần nhất là } 256$$
+  Giúp cấu hình Index luôn đạt hiệu năng và độ chính xác cân bằng nhất mà không cần nhập thủ công.
 
 ---
 
