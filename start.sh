@@ -9,7 +9,7 @@ if ! command -v cargo &> /dev/null; then
 fi
 
 echo "Đang biên dịch lõi TurboQuant (Release Mode - Tối ưu hóa AVX)..."
-cargo build --release
+RUSTFLAGS="-C target-cpu=native" cargo build --release
 
 echo "====================================="
 echo "✅ Biên dịch thành công!"

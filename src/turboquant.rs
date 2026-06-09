@@ -7,23 +7,17 @@ use std::arch::x86_64::*;
 // - SQ bits supported: 1 or 3 (TurboQuant 2b/4b)
 // =============================================================================
 
-pub fn tq_quantize_rotated(x_rot: &[f32], n: usize, d: usize, sq_centroids: &[f32], sq_bits: i32) -> (Vec<u8>, Vec<u8>, Vec<f32>) {
-    // n and d passed directly
-
+pub fn tq_quantize_rotated(x_rot: &[f32], n: usize, d: usize, sq_centroids: &[f32], sq_bits: i32) -> Result<(Vec<u8>, Vec<u8>, Vec<f32>), String> {
     let cent = sq_centroids;
 
     let bits = sq_bits as usize;
     if bits != 1 && bits != 3 {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            format!("tq_quantize_rotated only supports sq_bits=1 or 3 (got {})", bits),
-        ));
+        return Err(format!("tq_quantize_rotated only supports sq_bits=1 or 3 (got {})", bits));
     }
 
     let k = 1usize << bits;
     if cent.len() != k {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            format!("sq_centroids length must be {} for sq_bits={}, got {}", k, bits, cent.len()),
-        ));
+        return Err(format!("sq_centroids length must be {} for sq_bits={}, got {}", k, bits, cent.len()));
     }
 
     let mut boundaries = vec![0.0f32; k + 1];
@@ -87,16 +81,15 @@ pub fn tq_quantize_rotated(x_rot: &[f32], n: usize, d: usize, sq_centroids: &[f3
                 }
                 *rn_out = sum_sq.sqrt();
             });
-    });
-
-    return (sq_codes, qjl_signs, res_norms);
+    }
+    return Ok((sq_codes, qjl_signs, res_norms));
 }
 
 pub fn tq_kmeans_train(x_arr: &[f32], n: usize, d: usize, n_list: usize, iters: usize) -> Vec<f32> {
     
     if n < n_list { panic!("Points < n_list"); }
     use rand::seq::SliceRandom;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut idxs: Vec<usize> = (0..n).collect();
     idxs.shuffle(&mut rng);
     let mut centroids = vec![0.0f32; n_list * d];
@@ -114,12 +107,13 @@ pub fn tq_kmeans_train(x_arr: &[f32], n: usize, d: usize, n_list: usize, iters: 
         let mut assignments = vec![0usize; n];
         let cent_view = ndarray::ArrayView2::from_shape((n_list, d), &centroids).unwrap();
         
+        let x_view = ndarray::ArrayView2::from_shape((n, d), x_arr).unwrap();
         {
             let chunk_size = 1024; // Tối ưu hơn cho SIMD mà vẫn an toàn RAM
             assignments.par_chunks_mut(chunk_size).enumerate().for_each(|(c_idx, a_chunk)| {
                 let start = c_idx * chunk_size;
                 let end = (start + chunk_size).min(n);
-                let x_chunk = x_arr.slice(ndarray::s![start..end, ..]);
+                let x_chunk = x_view.slice(ndarray::s![start..end, ..]);
                 
                 // Dùng dot() của ndarray (có sẵn cache-blocking)
                 let scores = x_chunk.dot(&cent_view.t());
@@ -134,7 +128,7 @@ pub fn tq_kmeans_train(x_arr: &[f32], n: usize, d: usize, n_list: usize, iters: 
                     *out = bc;
                 });
             });
-        });
+        }
         let mut next = vec![0.0f32; n_list * d];
         let mut counts = vec![0usize; n_list];
         for i in 0..n {
@@ -152,7 +146,7 @@ pub fn tq_kmeans_train(x_arr: &[f32], n: usize, d: usize, n_list: usize, iters: 
             }
         }
     }
-    Ok(PyArray1::from_vec_bound(py, centroids).reshape([n_list, d])?.unbind())
+    centroids
 }
 
 pub fn tq_assign_clusters(x_arr: &[f32], n: usize, d: usize, c_arr: &[f32], n_list: usize) -> Vec<i32> {
@@ -215,17 +209,15 @@ pub fn tq_unified_search(
     let scan_top_k = top_k; // No reranking for simple version
 
     // LUTs pre-computation
-    let mut all_sq_luts = vec![0.0f32; d * 8];
-    let mut all_qjl_luts = vec![0.0f32; (qjl_dim / 4) * 16];
+    let mut all_sq_luts = vec![0.0f32; d * 8 * 8];
+    let mut all_qjl_luts = vec![0.0f32; (qjl_dim / 4) * 16 * 8];
 
     for k in 0..d {
-        let base = k * 8;
         let qv = qjl_queries_flat[k];
-        for b in 0..8 { all_sq_luts[base + b] = qv * cent_sl[b]; }
+        for b in 0..8 { all_sq_luts[(k * 8 + b) * 8] = qv * cent_sl[b]; }
     }
 
     for k in 0..(qjl_dim / 4) {
-        let base = k * 16;
         for b in 0..16 {
             let mut s = 0.0f32;
             for v in 0..4 {
@@ -233,7 +225,7 @@ pub fn tq_unified_search(
                 let sign = if ((b >> v) & 1) == 1 { 1.0f32 } else { -1.0f32 };
                 s += qv * sign;
             }
-            all_qjl_luts[base + b] = s;
+            all_qjl_luts[(k * 16 + b) * 8] = s;
         }
     }
 
@@ -320,25 +312,63 @@ pub fn tq_unified_search(
                     let v_res = _mm256_set1_ps(res_sl[i] * qjl_scale);
 
                     let mut v_sq0 = _mm256_setzero_ps();
+                    let mut v_sq1 = _mm256_setzero_ps();
+                    let mut v_sq2 = _mm256_setzero_ps();
+                    let mut v_sq3 = _mm256_setzero_ps();
                     let mut v_qjl0 = _mm256_setzero_ps();
+                    let mut v_qjl1 = _mm256_setzero_ps();
                     
                     if mse_bits == 1 {
                         for k in 0..(d / 8) {
                             let s0 = sq_flat[rsq + k] as usize;
                             v_sq0 = _mm256_add_ps(v_sq0, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8) * 8 + (s0 & 1)) * 8)));
+                            v_sq1 = _mm256_add_ps(v_sq1, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 1) * 8 + ((s0 >> 1) & 1)) * 8)));
+                            v_sq2 = _mm256_add_ps(v_sq2, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 2) * 8 + ((s0 >> 2) & 1)) * 8)));
+                            v_sq3 = _mm256_add_ps(v_sq3, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 3) * 8 + ((s0 >> 3) & 1)) * 8)));
+                            v_sq0 = _mm256_add_ps(v_sq0, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 4) * 8 + ((s0 >> 4) & 1)) * 8)));
+                            v_sq1 = _mm256_add_ps(v_sq1, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 5) * 8 + ((s0 >> 5) & 1)) * 8)));
+                            v_sq2 = _mm256_add_ps(v_sq2, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 6) * 8 + ((s0 >> 6) & 1)) * 8)));
+                            v_sq3 = _mm256_add_ps(v_sq3, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 7) * 8 + ((s0 >> 7) & 1)) * 8)));
+
                             let b = signs_flat[rqj + k] as usize;
-                            v_qjl0 = _mm256_add_ps(v_qjl0, _mm256_loadu_ps(all_qjl_luts.as_ptr().add(((k * 2) * 16 + (b & 15)) * 8)));
+                            let b0 = b & 15;
+                            let b1 = b >> 4;
+                            v_qjl0 = _mm256_add_ps(v_qjl0, _mm256_loadu_ps(all_qjl_luts.as_ptr().add(((k * 2) * 16 + b0) * 8)));
+                            v_qjl1 = _mm256_add_ps(v_qjl1, _mm256_loadu_ps(all_qjl_luts.as_ptr().add(((k * 2 + 1) * 16 + b1) * 8)));
                         }
                     } else {
                         for k in 0..(d / 8) {
-                            let s0 = sq_flat[rsq + k * 4] as usize;
+                            let s_idx = rsq + k * 4;
+                            let s0 = sq_flat[s_idx] as usize;
                             v_sq0 = _mm256_add_ps(v_sq0, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8) * 8 + (s0 & 7)) * 8)));
+                            v_sq1 = _mm256_add_ps(v_sq1, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 1) * 8 + ((s0 >> 3) & 7)) * 8)));
+
+                            let s1 = sq_flat[s_idx + 1] as usize;
+                            v_sq2 = _mm256_add_ps(v_sq2, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 2) * 8 + (s1 & 7)) * 8)));
+                            v_sq3 = _mm256_add_ps(v_sq3, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 3) * 8 + ((s1 >> 3) & 7)) * 8)));
+
+                            let s2 = sq_flat[s_idx + 2] as usize;
+                            v_sq0 = _mm256_add_ps(v_sq0, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 4) * 8 + (s2 & 7)) * 8)));
+                            v_sq1 = _mm256_add_ps(v_sq1, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 5) * 8 + ((s2 >> 3) & 7)) * 8)));
+
+                            let s3 = sq_flat[s_idx + 3] as usize;
+                            v_sq2 = _mm256_add_ps(v_sq2, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 6) * 8 + (s3 & 7)) * 8)));
+                            v_sq3 = _mm256_add_ps(v_sq3, _mm256_loadu_ps(all_sq_luts.as_ptr().add(((k * 8 + 7) * 8 + ((s3 >> 3) & 7)) * 8)));
+
                             let b = signs_flat[rqj + k] as usize;
-                            v_qjl0 = _mm256_add_ps(v_qjl0, _mm256_loadu_ps(all_qjl_luts.as_ptr().add(((k * 2) * 16 + (b & 15)) * 8)));
+                            let b0 = b & 15;
+                            let b1 = b >> 4;
+                            v_qjl0 = _mm256_add_ps(v_qjl0, _mm256_loadu_ps(all_qjl_luts.as_ptr().add(((k * 2) * 16 + b0) * 8)));
+                            v_qjl1 = _mm256_add_ps(v_qjl1, _mm256_loadu_ps(all_qjl_luts.as_ptr().add(((k * 2 + 1) * 16 + b1) * 8)));
                         }
                     }
 
-                    let vf = _mm256_add_ps(_mm256_mul_ps(_mm256_fmadd_ps(v_qjl0, v_res, v_sq0), v_norms), v_bias);
+                    let v_sq_01 = _mm256_add_ps(v_sq0, v_sq1);
+                    let v_sq_23 = _mm256_add_ps(v_sq2, v_sq3);
+                    let v_sq = _mm256_add_ps(v_sq_01, v_sq_23);
+                    let v_qjl = _mm256_add_ps(v_qjl0, v_qjl1);
+
+                    let vf = _mm256_add_ps(_mm256_mul_ps(_mm256_fmadd_ps(v_qjl, v_res, v_sq), v_norms), v_bias);
                     let mut tmp = [0.0f32; 8];
                     _mm256_storeu_ps(tmp.as_mut_ptr(), vf);
                     for (lq, _) in qchunk.iter().enumerate() {

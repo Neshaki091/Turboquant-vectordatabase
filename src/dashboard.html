@@ -99,6 +99,7 @@
                         <div>
                             <button onclick="openModal()" style="margin-right:10px; background:var(--success);">➕ Add Vector</button>
                             <button class="danger" onclick="uiClearAll()" style="margin-right:10px;">🗑️ Clear All Data</button>
+                            <button onclick="uiSaveToDisk()" style="margin-right:10px; background:#8b5cf6;">💾 Save to Disk</button>
                             <button onclick="uiFetchAll()">🔄 Refresh Data</button>
                         </div>
                     </div>
@@ -122,9 +123,11 @@
                 <!-- Search Vectors -->
                 <div class="card">
                     <h2>🔍 Nearest Neighbor Search (KNN)</h2>
-                    <div style="display:flex; gap:10px; margin-bottom: 15px;">
+                    <div style="display:flex; gap:10px; margin-bottom: 15px; align-items:center;">
                         <input type="text" id="searchVec" value="[0.1, 0.2, 0.3, 0.4]" style="flex:1;">
-                        <input type="number" id="searchTopK" value="5" style="width:100px;" title="Top K">
+                        <input type="number" id="searchTopK" value="5" style="width:70px;" title="Top K">
+                        <label style="margin:0; display:flex; align-items:center; gap:5px;"><input type="checkbox" id="searchExact" style="width:auto;"> Flat (Exact)</label>
+                        <input type="number" id="searchNProbe" value="10" style="width:90px;" title="n_probe (IVF clusters)">
                         <button onclick="uiSearch()">Search</button>
                     </div>
                     <table>
@@ -230,6 +233,13 @@
             } catch(e) { alert("Lỗi: " + e.message); }
         }
 
+        async function uiSaveToDisk() {
+            try {
+                let res = await fetch('/collections/default/save', { method: 'POST' });
+                alert(await res.text());
+            } catch(e) { alert("Lỗi khi lưu: " + e.message); }
+        }
+
         async function uiFetchAll() {
             let tbody = document.getElementById('allPointsTable');
             tbody.innerHTML = '<tr><td colspan="4">Đang tải...</td></tr>';
@@ -257,12 +267,18 @@
         async function uiSearch() {
             let vector = JSON.parse(document.getElementById('searchVec').value);
             let top_k = parseInt(document.getElementById('searchTopK').value);
+            let exact = document.getElementById('searchExact').checked;
+            let n_probe = parseInt(document.getElementById('searchNProbe').value);
             let tbody = document.getElementById('searchResultsTable');
             tbody.innerHTML = '<tr><td colspan="4">Đang tìm kiếm...</td></tr>';
             try {
                 let res = await fetch('/collections/default/search', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ vector, top_k })
+                    body: JSON.stringify({ 
+                        vector, 
+                        top_k, 
+                        params: { exact, n_probe }
+                    })
                 });
                 let json = await res.json();
                 if(json.length === 0) {
