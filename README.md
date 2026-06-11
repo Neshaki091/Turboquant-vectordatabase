@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Language-Rust-orange?style=for-the-badge&logo=rust" alt="Rust" />
-  <img src="https://img.shields.io/badge/Throughput-3156%20QPS-brightgreen?style=for-the-badge&logo=fastapi" alt="Throughput" />
+  <img src="https://img.shields.io/badge/Throughput-1094%20QPS-brightgreen?style=for-the-badge&logo=fastapi" alt="Throughput" />
   <img src="https://img.shields.io/badge/Latency-0.35%20ms-blue?style=for-the-badge&logo=clock" alt="Latency" />
   <img src="https://img.shields.io/badge/Memory-1GB%20RAM-red?style=for-the-badge" alt="Memory Limit" />
 </p>
@@ -28,29 +28,47 @@ Bằng cách loại bỏ hoàn toàn các thư viện cồng kềnh (Python, C++
 
 ## 📊 So Sánh Hiệu Năng Thực Tế (Benchmark Results)
 
-*Thử nghiệm đo lường tần suất xử lý truy vấn mạng (QPS) và độ chính xác với tập dữ liệu **12,450 vectors (chiều 384)** của tập Qasper E5 trên CPU **Intel Core i5-10300H** (chạy thực tế độc lập):*
+*Thử nghiệm đo lường tần suất xử lý truy vấn mạng (QPS) và độ trễ (Latency) trên hai tập dữ liệu **Qasper_E5 (12,450 vectors)** và **HotpotQA_E5 (482,021 vectors)** (Vector chiều 384) qua môi trường mạng cục bộ:*
 
-### Biểu đồ tốc độ QPS (Batch Size = 100, Càng dài càng nhanh)
+### 1. Tập dữ liệu siêu lớn: HotpotQA_E5 (482,021 vectors)
+*(Thiết lập: `n_probe=16`, Không Rerank, đo lường toàn hệ thống)*
 
+**Biểu đồ tốc độ QPS (Batch Size = 100):**
 ```text
-Flat Search (Exact Match)      | █ 41.9 QPS (1.0x)
-TQ Binary (n_probe=92, Rerank) | ██████████████████████████ 1036.1 QPS (24.7x)
-TQ Binary (n_probe=92, No RR)  | ████████████████████████████ 1094.8 QPS (26.1x)
+Flat Search (Exact Match)      | █ 9.9 QPS (1.0x)
+TQ JSON (API Truyền thống)     | ███████████████████████████████ 519.4 QPS (52.5x)
+TQ Binary (Zero-Copy)          | ██████████████████████████████████ 563.6 QPS (57.0x)
 ```
 
-### Chi tiết các chỉ số cấu hình tìm kiếm
-
-| Cấu hình thuật toán / Giao thức | n_probe | Tái xếp hạng (Rerank) | QPS (JSON) | QPS (BINARY) | Lợi ích nhị phân | Overlap@16 (Độ bao phủ) | ANN Recall@1@16 |
+**Chi tiết các chỉ số (HotpotQA):**
+| Cấu hình thuật toán / Giao thức | Batch Size | QPS | Độ trễ Mean (ms) | Độ trễ P99 (ms) | Recall@1@16 | Overlap@16 | Tăng tốc (vs Flat) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Flat Search** (Exact Match) | - | - | 41.9 QPS | **41.9 QPS** | 1.0x | 100.0% | 100.0% |
-| **TQ (Tìm kiếm thô)** | 92 | Tắt | 895.4 QPS | **1,094.8 QPS** | **+22.2%** | 87.19% | 100.0% |
-| **TQ (Tái xếp hạng tối giản)**| 92 | **Bật (Factor=2)** | 876.9 QPS | **1,026.6 QPS** | **+17.1%** | **97.88%** 🎯 | **100.0%** |
-| **TQ (Tái xếp hạng tối đa)**| 92 | **Bật (Factor=20)**| 816.8 QPS | **1,036.1 QPS** | **+26.8%** | **98.19%** 🎯 | **100.0%** |
+| **Flat Search** | 100 | 9.9 | 10,114.8 | 10,114.8 | 100% | 100% | 1.0x |
+| **TQ JSON** | 100 | 519.4 | 189.0 | 189.0 | 100% | 84.19% | **52.5x** |
+| **TQ Binary** | 100 | 563.6 | 173.4 | 173.4 | 100% | 84.19% | **57.0x** |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Flat Search** | 1 | 1.6 | 610.0 | 695.5 | 100% | 100% | 1.0x |
+| **TQ JSON** | 1 | 231.5 | 4.3 | 6.0 | 100% | 84.19% | **141.2x** |
+| **TQ Binary** | 1 | **269.7** | **3.6** | **5.3** | 100% | 84.19% | **164.6x** 🚀 |
+
+### 2. Tập dữ liệu trung bình: Qasper_E5 (12,450 vectors)
+*(Thiết lập: `n_probe=16`, Không Rerank, đo lường toàn hệ thống)*
+
+| Cấu hình thuật toán / Giao thức | Batch Size | QPS | Độ trễ Mean (ms) | Độ trễ P99 (ms) | Recall@1@16 | Overlap@16 | Tăng tốc (vs Flat) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Flat Search** | 100 | 407.2 | 243.0 | 243.0 | 100% | 100% | 1.0x |
+| **TQ JSON** | 100 | 1,985.7 | 47.3 | 47.3 | 100% | 78.12% | 4.9x |
+| **TQ Binary** | 100 | **3,850.0** | **24.3** | **24.3** | 100% | 78.12% | **9.5x** 🚀 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Flat Search** | 1 | 60.5 | 16.5 | 19.3 | 100% | 100% | 1.0x |
+| **TQ JSON** | 1 | 422.2 | 2.3 | 3.8 | 100% | 78.12% | 7.0x |
+| **TQ Binary** | 1 | **437.0** | **2.2** | **3.6** | 100% | 78.12% | **7.2x** |
 
 > [!IMPORTANT]
 > **Nhận xét cốt lõi từ thực nghiệm:**
-> 1. **Chi phí tái xếp hạng siêu nhỏ:** Khi kích hoạt bộ tái xếp hạng (Rerank) ở cấu hình `n_probe=92`, độ bao phủ tập kết quả (Overlap@16) nhảy vọt từ **87.19% lên 98.19%** (gần như tiệm cận tuyệt đối 100% của Flat Search), trong khi thông lượng QPS chỉ giảm nhẹ **~5%** (từ 1,094.8 QPS xuống 1,036.1 QPS).
-> 2. **Ưu thế tuyệt đối của Binary Protocol:** Giao thức nhị phân giúp tăng tốc độ xử lý thêm từ **17% đến 26%** so với giao thức JSON truyền thống nhờ việc loại bỏ hoàn toàn chi phí đóng gói/mở gói chuỗi ký tự UTF-8 trên CPU.
+> 1. **Khả năng duy trì độ trễ (Sub-10ms):** Dù truy vấn trên tập dữ liệu nhỏ (12K) hay cực lớn (482K), độ trễ truy vấn đơn (`batch_size=1`) của TurboQuant Binary luôn cực kỳ ổn định ở mức **< 6 mili-giây**, giúp đáp ứng hoàn hảo cho các hệ thống RAG thời gian thực. Trong khi đó, Flat Search bị sụt giảm tốc độ nghiêm trọng từ 19ms xuống tận 695ms.
+> 2. **Hiệu suất thu phóng siêu đẳng (Scalability):** Khi áp dụng trên dữ liệu khổng lồ (HotpotQA), thuật toán phân mảnh kết hợp nén 4-bit của TurboQuant tỏa sáng rực rỡ với mức tăng tốc lên tới **164.6 lần** so với Flat Search truyền thống, nhưng **Recall (Top-1) vẫn luôn đạt tuyệt đối 100%**.
+> 3. **Ưu thế tuyệt đối của Binary Protocol:** Đặc biệt khi xử lý các lô lớn (Batch Size = 100) trên tập Qasper, Giao thức Nhị phân giúp tăng tốc độ xử lý thêm gần **100%** (từ 1985 QPS lên 3850 QPS) so với giao thức JSON truyền thống nhờ việc loại bỏ hoàn toàn nút thắt cổ chai serialize/deserialize UTF-8 trên CPU.
 
 ### ❓ Tại sao tốc độ QPS hiển thị đôi khi dao động (Lúc nhanh lúc chậm)?
 
@@ -76,7 +94,7 @@ Từ phiên bản mới nhất, TurboQuant tích hợp thuật toán phân hoạ
 
 ## 🛠️ Biên dịch Tối ưu hóa AVX2 / AVX-512
 
-Để máy chủ đạt tốc độ tối đa **>3,000 QPS**, hãy đảm bảo biên dịch ứng dụng trực tiếp trên phần cứng máy chủ đích bằng cờ `target-cpu=native`.
+Để máy chủ đạt tốc độ tối đa **>1,000 QPS**, hãy đảm bảo biên dịch ứng dụng trực tiếp trên phần cứng máy chủ đích bằng cờ `target-cpu=native`.
 
 ### Khởi chạy nhanh trên Windows:
 Chạy file [start.bat](file:///e:/ARQ-RAG/ARQ-RAG-turboquant-main/TurboQuant_Server/start.bat):
@@ -117,68 +135,3 @@ Mỗi request bao gồm **18 bytes Header** và mảng byte phẳng chứa các 
 * `rerank_factor` (u32 - 4 bytes): Số ứng viên lấy ra để re-rank (ví dụ: `2` hoặc `4`).
 * `with_vector` (u8 - 1 byte): Trả về cả vector gốc trong kết quả (`1` = Bật, `0` = Tắt).
 
----
-
-## ☕ Tích Hợp Client Java (Spring Boot)
-
-Mẫu code tối ưu bằng `ByteBuffer` có hiệu năng tương đương gRPC:
-
-```java
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.ArrayList;
-import java.util.List;
-
-public class TurboQuantClient {
-    private final HttpClient httpClient = HttpClient.newHttpClient();
-    private final String url = "http://localhost:6333/collections/default/search/batch/bin";
-    private final int DIMENSION = 384;
-
-    public static class SearchHit {
-        public long id;
-        public float score;
-        public float[] vector;
-    }
-
-    public List<List<SearchHit>> search(float[][] queries, int topK, int nProbe) throws Exception {
-        int n = queries.length;
-        ByteBuffer writeBuf = ByteBuffer.allocate(18 + (n * DIMENSION * 4)).order(ByteOrder.LITTLE_ENDIAN);
-        writeBuf.putInt(n).putInt(topK).putInt(nProbe).put((byte) 1).putInt(2).put((byte) 0);
-        
-        for (float[] q : queries) {
-            for (float val : q) writeBuf.putFloat(val);
-        }
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/octet-stream")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(writeBuf.array()))
-                .build();
-
-        HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        ByteBuffer readBuf = ByteBuffer.wrap(response.body()).order(ByteOrder.LITTLE_ENDIAN);
-        
-        List<List<SearchHit>> results = new ArrayList<>();
-        for (int i = 0; i < n; i++) {
-            int numHits = readBuf.getInt();
-            List<SearchHit> hits = new ArrayList<>();
-            for (int h = 0; h < numHits; h++) {
-                SearchHit hit = new SearchHit();
-                hit.id = readBuf.getLong();
-                hit.score = readBuf.getFloat();
-                if (readBuf.get() == 1) {
-                    hit.vector = new float[DIMENSION];
-                    for (int d = 0; d < DIMENSION; d++) hit.vector[d] = readBuf.getFloat();
-                }
-                hits.add(hit);
-            }
-            results.add(hits);
-        }
-        return results;
-    }
-}
-```

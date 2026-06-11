@@ -2,5 +2,5 @@
 Cargo.lock
 *.exe
 *.pdb
-/data
-*.txt
+.agents
+/data/tq_index

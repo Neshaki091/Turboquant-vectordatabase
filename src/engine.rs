@@ -12,6 +12,7 @@ use std::path::Path;
 pub struct IndexConfig {
     pub n_list: Option<usize>, // Cấu hình số cụm IVF (nếu None sẽ tự động tính sqrt(N))
     pub quantize_bits: usize,  // 2 cho 2-bit, 4 cho 4-bit
+    pub max_training_samples: Option<usize>, // User config for max samples
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -31,9 +32,16 @@ pub struct IndexedSegment {
 // Cấu trúc lõi Vector Database
 #[derive(Serialize, Deserialize)]
 pub struct TQEngine {
-    // Dữ liệu thô gốc (cho mục đích fallback và trả về payload)
-    vectors: HashMap<u64, Vec<f32>>,
-    payloads: HashMap<u64, Value>,
+    // Dữ liệu thô lưu trên đĩa để chạy Edge (1GB RAM)
+    vector_offsets: HashMap<u64, usize>,
+    raw_file_path: String,
+    #[serde(skip)]
+    pub raw_file: Option<std::fs::File>,
+    
+    payload_offsets: HashMap<u64, (u64, u32)>,
+    payload_file_path: String,
+    #[serde(skip)]
+    pub payload_file: Option<std::fs::File>,
 
     // Phân mảnh đã nén
     pub indexed_segment: Option<IndexedSegment>,
@@ -47,8 +55,10 @@ pub struct TQEngine {
 
 #[derive(Serialize, Deserialize)]
 struct EngineState {
-    vectors: HashMap<u64, Vec<f32>>,
-    payload_strings: HashMap<u64, String>,
+    vector_offsets: HashMap<u64, usize>,
+    raw_file_path: String,
+    payload_offsets: HashMap<u64, (u64, u32)>,
+    payload_file_path: String,
     unindexed_ids: HashSet<u64>,
     dim: usize,
     index_config: IndexConfig,
@@ -56,13 +66,18 @@ struct EngineState {
 
 impl TQEngine {
     pub fn new() -> Self {
+        std::fs::create_dir_all("data/tq_index").unwrap();
         Self {
-            vectors: HashMap::new(),
-            payloads: HashMap::new(),
+            vector_offsets: HashMap::new(),
+            raw_file_path: "data/tq_index/raw_vectors.bin".to_string(),
+            raw_file: None,
+            payload_offsets: HashMap::new(),
+            payload_file_path: "data/tq_index/payloads.bin".to_string(),
+            payload_file: None,
             indexed_segment: None,
             unindexed_ids: HashSet::new(),
             dim: 0,
-            index_config: IndexConfig { n_list: None, quantize_bits: 4 }, // Default TurboQuant 4-bit
+            index_config: IndexConfig { n_list: None, quantize_bits: 4, max_training_samples: None },
         }
     }
 
@@ -70,29 +85,62 @@ impl TQEngine {
         if self.dim == 0 {
             self.dim = vector.len();
         }
-        self.vectors.insert(id, vector);
-        if let Some(p) = payload {
-            self.payloads.insert(id, p);
+        if self.raw_file.is_none() {
+            self.raw_file = Some(std::fs::OpenOptions::new().read(true).create(true).append(true).open(&self.raw_file_path).unwrap());
         }
+        let row_idx = self.vector_offsets.len();
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(vector.as_ptr() as *const u8, vector.len() * 4)
+        };
+        use std::io::Write;
+        self.raw_file.as_mut().unwrap().write_all(bytes).unwrap();
+        
+        self.vector_offsets.insert(id, row_idx);
+        
+        if self.payload_file.is_none() {
+            self.payload_file = Some(std::fs::OpenOptions::new().create(true).append(true).read(true).open(&self.payload_file_path).unwrap());
+        }
+        
+        let mut p_offset = 0;
+        let mut p_len = 0;
+        if let Some(p) = payload {
+            let json_str = serde_json::to_string(&p).unwrap();
+            let bytes = json_str.as_bytes();
+            p_len = bytes.len() as u32;
+            let mut file = self.payload_file.as_mut().unwrap();
+            use std::io::{Seek, SeekFrom, Write};
+            p_offset = file.seek(SeekFrom::End(0)).unwrap();
+            file.write_all(bytes).unwrap();
+        }
+        if p_len > 0 {
+            self.payload_offsets.insert(id, (p_offset, p_len));
+        }
+
         self.unindexed_ids.insert(id);
     }
 
     pub fn delete(&mut self, id: u64) {
-        self.vectors.remove(&id);
-        self.payloads.remove(&id);
+        self.vector_offsets.remove(&id);
+        self.payload_offsets.remove(&id);
         self.unindexed_ids.remove(&id);
     }
 
     pub fn clear(&mut self) {
-        self.vectors.clear();
-        self.payloads.clear();
+        self.vector_offsets.clear();
+        self.payload_offsets.clear();
         self.indexed_segment = None;
         self.unindexed_ids.clear();
+        if let Some(file) = &mut self.payload_file {
+            let _ = file.set_len(0);
+        }
+        if let Some(file) = &mut self.raw_file {
+            let _ = file.set_len(0);
+        }
     }
 
     pub fn reset_index(&mut self) {
         self.indexed_segment = None;
-        self.unindexed_ids = self.vectors.keys().cloned().collect();
+        self.unindexed_ids = self.vector_offsets.keys().cloned().collect();
     }
 
     pub fn save_to_disk(&self, dir_path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -121,14 +169,11 @@ impl TQEngine {
         let file = File::create(format!("{}/engine_state.bin", dir_path))?;
         let writer = BufWriter::new(file);
         
-        // Chuyển serde_json::Value sang String để tránh lỗi bincode DeserializeAnyNotSupported
-        let payload_strings: HashMap<u64, String> = self.payloads.iter()
-            .map(|(k, v)| (*k, serde_json::to_string(v).unwrap_or_default()))
-            .collect();
-
         let state = EngineState {
-            vectors: self.vectors.clone(),
-            payload_strings,
+            vector_offsets: self.vector_offsets.clone(), 
+            raw_file_path: self.raw_file_path.clone(),
+            payload_offsets: self.payload_offsets.clone(),
+            payload_file_path: self.payload_file_path.clone(),
             unindexed_ids: self.unindexed_ids.clone(),
             dim: self.dim,
             index_config: self.index_config.clone(),
@@ -143,15 +188,15 @@ impl TQEngine {
             let file = File::open(state_path)?;
             let reader = BufReader::new(file);
             let state: EngineState = bincode::deserialize_from(reader)?;
-            self.vectors = state.vectors;
+            self.vector_offsets = state.vector_offsets;
+            self.raw_file_path = state.raw_file_path;
+            self.raw_file = Some(std::fs::OpenOptions::new().read(true).create(true).append(true).open(&self.raw_file_path).unwrap());
             self.unindexed_ids = state.unindexed_ids;
             self.dim = state.dim;
             self.index_config = state.index_config;
-            
-            // Khôi phục lại serde_json::Value
-            self.payloads = state.payload_strings.into_iter()
-                .filter_map(|(k, v)| serde_json::from_str(&v).ok().map(|val| (k, val)))
-                .collect();
+            self.payload_offsets = state.payload_offsets;
+            self.payload_file_path = state.payload_file_path;
+            self.payload_file = Some(std::fs::OpenOptions::new().create(true).append(true).read(true).open(&self.payload_file_path).unwrap());
         }
 
         if Path::new(&format!("{}/sq_codes.npy", dir_path)).exists() {
@@ -275,9 +320,9 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
 }
 
     pub fn build_index(&mut self) {
-        if self.vectors.is_empty() { return; }
+        if self.vector_offsets.is_empty() { return; }
         
-        let n = self.vectors.len();
+        let n = self.vector_offsets.len();
         let d = self.dim;
 
         // 1. Ma trận xoay Orthogonal (Random) dùng Gram-Schmidt
@@ -303,15 +348,34 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
             }
         }
 
-        // 2. Thu thập x_arr và vector_ids
-        let mut x_arr = vec![0.0f32; n * d];
-        let mut raw_ids = vec![0i64; n];
-        for (i, (&id, vec)) in self.vectors.iter().enumerate() {
-            raw_ids[i] = id as i64;
-            for j in 0..d { x_arr[i * d + j] = vec[j]; }
+        // We must flush raw_file before mmapping
+        if let Some(ref mut f) = self.raw_file {
+            use std::io::Write;
+            let _ = f.flush();
         }
 
-        // 3. Phân cụm IVF (K-Means)
+        let mmap_opt = self.read_mmap();
+        if mmap_opt.is_none() { return; }
+        let mmap = mmap_opt.unwrap();
+        let raw_f32: &[f32] = unsafe { std::slice::from_raw_parts(mmap.as_ptr() as *const f32, mmap.len() / 4) };
+
+        let mut id_by_row = vec![0i64; n];
+        for (&id, &row) in &self.vector_offsets {
+            id_by_row[row] = id as i64;
+        }
+
+        // 2. Lấy mẫu ngẫu nhiên cho K-Means để tiết kiệm RAM
+        let sample_limit = self.index_config.max_training_samples.unwrap_or(50_000);
+        let sample_size = n.min(sample_limit);
+        let mut sample = Vec::with_capacity(sample_size * d);
+        use rand::seq::IteratorRandom;
+        let chosen_indices: Vec<usize> = (0..n).choose_multiple(&mut rng, sample_size);
+        for &idx in &chosen_indices {
+            let start = idx * d;
+            sample.extend_from_slice(&raw_f32[start..start+d]);
+        }
+
+        // 3. Phân cụm IVF (K-Means) trên mẫu nhỏ
         let default_n_list = if n < 2 {
             1
         } else {
@@ -326,49 +390,67 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
             }
         };
         let n_list = self.index_config.n_list.unwrap_or(default_n_list).min(n);
-        let coarse_centroids = crate::turboquant::tq_kmeans_train(&x_arr, n, d, n_list, 15);
-        let assignments = crate::turboquant::tq_assign_clusters(&x_arr, n, d, &coarse_centroids, n_list);
+        let coarse_centroids = crate::turboquant::tq_kmeans_train(&sample, sample_size, d, n_list, 15);
+        let assignments = crate::turboquant::tq_assign_clusters(raw_f32, n, d, &coarse_centroids, n_list);
 
         let mut cluster_to_indices = vec![Vec::new(); n_list];
         for i in 0..n {
             cluster_to_indices[assignments[i] as usize].push(i);
         }
 
-        // 4. Tạo offsets và x_rot (Residuals)
+        // 4. Tạo offsets và x_rot (Residuals) - Dùng MMAP để tránh OOM 740MB RAM
         let mut offsets_sl = vec![0i32; n_list + 1];
-        let mut x_rot = vec![0.0f32; n * d];
-        let mut out_vector_ids = Vec::with_capacity(n);
-        let mut original_norms = Vec::with_capacity(n);
-        
         let mut cur = 0;
         for c in 0..n_list {
             offsets_sl[c] = cur as i32;
-            for &i in &cluster_to_indices[c] {
-                out_vector_ids.push(raw_ids[i]);
+            cur += cluster_to_indices[c].len();
+        }
+        offsets_sl[n_list] = cur as i32;
+
+        let x_rot_path = "data/tq_index/temp_x_rot.bin";
+        let x_rot_file = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(true).open(x_rot_path).unwrap();
+        x_rot_file.set_len((n * d * 4) as u64).unwrap();
+        let mut x_rot_mmap = unsafe { memmap2::MmapMut::map_mut(&x_rot_file).unwrap() };
+        let mut out_vector_ids = vec![0i64; n];
+        let mut original_norms = vec![0.0f32; n];
+
+        struct SyncPtr<T>(*mut T);
+        unsafe impl<T> Send for SyncPtr<T> {}
+        unsafe impl<T> Sync for SyncPtr<T> {}
+
+        let x_rot_ptr = SyncPtr(x_rot_mmap.as_mut_ptr() as *mut f32);
+        let ids_ptr = SyncPtr(out_vector_ids.as_mut_ptr());
+        let norms_ptr = SyncPtr(original_norms.as_mut_ptr());
+
+        use rayon::prelude::*;
+        (0..n_list).into_par_iter().for_each(|c| {
+            let cur_start = offsets_sl[c] as usize;
+            for (idx, &i) in cluster_to_indices[c].iter().enumerate() {
+                let cur = cur_start + idx;
                 
-                // Compute original vector norm
+                unsafe { std::ptr::write(ids_ptr.0.add(cur), id_by_row[i]); }
+                
                 let mut original_nrm = 0.0f32;
                 for j in 0..d {
-                    let v = x_arr[i * d + j];
+                    let v = raw_f32[i * d + j];
                     original_nrm += v * v;
                 }
-                original_norms.push(original_nrm.sqrt());
+                unsafe { std::ptr::write(norms_ptr.0.add(cur), original_nrm.sqrt()); }
 
-                // Tính Residuals = X - C
                 let mut raw_res = vec![0.0f32; d];
                 for j in 0..d {
-                    raw_res[j] = x_arr[i * d + j] - coarse_centroids[c * d + j];
+                    raw_res[j] = raw_f32[i * d + j] - coarse_centroids[c * d + j];
                 }
-                // Áp dụng ma trận xoay: x_rot = raw_res * rot_op^T
+
                 for j in 0..d {
                     let mut s = 0.0f32;
                     for k in 0..d { s += raw_res[k] * rot_op[k * d + j]; }
-                    x_rot[cur * d + j] = s;
+                    unsafe { std::ptr::write(x_rot_ptr.0.add(cur * d + j), s); }
                 }
-                cur += 1;
             }
-        }
-        offsets_sl[n_list] = cur as i32;
+        });
+        
+        let x_rot: &[f32] = unsafe { std::slice::from_raw_parts(x_rot_mmap.as_ptr() as *const f32, n * d) };
 
         // 5. Train SQ centroids using Lloyd-Max (Gaussian codebook optimization)
         let actual_sq_bits = self.index_config.quantize_bits - 1;
@@ -393,6 +475,20 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
         } else {
             eprintln!("❌ TurboQuant Index Failed!");
         }
+        
+        // Dọn dẹp file MMAP tạm thời
+        drop(x_rot_mmap);
+        std::fs::remove_file(x_rot_path).ok();
+    }
+
+    fn read_payload_mmap(&self) -> Option<memmap2::Mmap> {
+        if let Some(ref file) = self.payload_file {
+            unsafe { memmap2::MmapOptions::new().map(file).ok() }
+        } else if let Ok(file) = std::fs::File::open(&self.payload_file_path) {
+            unsafe { memmap2::MmapOptions::new().map(&file).ok() }
+        } else {
+            None
+        }
     }
 
     pub fn search(&self, query: &[f32], top_k: usize, params: Option<crate::SearchParams>) -> Vec<crate::SearchResult> {
@@ -402,6 +498,34 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
         let rerank_factor = params.as_ref().and_then(|p| p.rerank_factor).unwrap_or(10);
         let with_vector = params.as_ref().and_then(|p| p.with_vector).unwrap_or(false);
         let mut results = vec![];
+
+        let mmap_opt = self.read_mmap();
+        let raw_f32: &[f32] = if let Some(ref mmap) = mmap_opt { unsafe { std::slice::from_raw_parts(mmap.as_ptr() as *const f32, mmap.len() / 4) } } else { &[] };
+        
+        let get_vec = |id: u64| -> Option<&[f32]> {
+            if let Some(&row_idx) = self.vector_offsets.get(&id) {
+                let start = row_idx * self.dim;
+                let end = start + self.dim;
+                if end <= raw_f32.len() {
+                    return Some(&raw_f32[start..end]);
+                }
+            }
+            None
+        };
+        
+        let payload_mmap = self.read_payload_mmap();
+        let get_payload = |id: u64| -> Option<Value> {
+            if let Some(&(offset, len)) = self.payload_offsets.get(&id) {
+                if let Some(ref mmap) = payload_mmap {
+                    let start = offset as usize;
+                    let end = start + len as usize;
+                    if end <= mmap.len() {
+                        return serde_json::from_slice(&mmap[start..end]).ok();
+                    }
+                }
+            }
+            None
+        };
 
         // 1. Search trên Indexed Segment
         if let Some(segment) = &self.indexed_segment {
@@ -443,7 +567,7 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
                     if id >= 0 {
                         let uid = id as u64;
                         // Tombstone filter: chỉ lấy nếu vector vẫn còn trong DB
-                        if let Some(vec) = self.vectors.get(&uid) {
+                        if let Some(vec) = get_vec(uid) {
                             let score = if rerank {
                                 // Compute exact dot product for re-ranking
                                 query.iter().zip(vec.iter()).map(|(a, b)| a * b).sum()
@@ -454,8 +578,8 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
                             results.push(crate::SearchResult {
                                 id: uid,
                                 score,
-                                vector: if with_vector { Some(vec.clone()) } else { None },
-                                payload: self.payloads.get(&uid).cloned(),
+                                vector: if with_vector { get_vec(uid).map(|s| s.to_vec()) } else { None },
+                                payload: get_payload(uid),
                             });
                         }
                     }
@@ -466,23 +590,50 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
         // 2. Search trên Unindexed Buffer (Flat Search)
         // Nếu exact=true hoặc chưa có Index, quét TOÀN BỘ vectors. Nếu không, chỉ quét unindexed_ids
         let ids_to_flat_search: Box<dyn Iterator<Item = &u64>> = if exact || self.indexed_segment.is_none() {
-            Box::new(self.vectors.keys())
+            Box::new(self.vector_offsets.keys())
         } else {
             Box::new(self.unindexed_ids.iter())
         };
 
+        let mut flat_results = std::collections::BinaryHeap::with_capacity(top_k);
+        
+        #[inline(always)]
+        fn f32_to_u32(f: f32) -> u32 {
+            let bits = f.to_bits();
+            if bits & 0x80000000 != 0 { !bits } else { bits | 0x80000000 }
+        }
+        #[inline(always)]
+        fn u32_to_f32(u: u32) -> f32 {
+            let bits = if u & 0x80000000 == 0 { !u } else { u & 0x7FFFFFFF };
+            f32::from_bits(bits)
+        }
+
         for uid in ids_to_flat_search {
-            if let Some(vec) = self.vectors.get(uid) {
-                let score: f32 = query.iter().zip(vec.iter()).map(|(a, b)| a * b).sum();
-                // Loại bỏ trùng lặp nếu có (mặc dù unindexed_ids và indexed_segment không nên giao nhau)
-                if !results.iter().any(|r| r.id == *uid) {
-                    results.push(crate::SearchResult {
-                        id: *uid,
-                        score,
-                        vector: if with_vector { Some(vec.clone()) } else { None },
-                        payload: self.payloads.get(uid).cloned(),
-                    });
+            if let Some(vec_slice) = get_vec(*uid) {
+                let mut score: f32 = 0.0;
+                for j in 0..self.dim {
+                    score += query[j] * vec_slice[j];
                 }
+                
+                let cmp_score = std::cmp::Reverse(f32_to_u32(score));
+                if flat_results.len() < top_k {
+                    flat_results.push((cmp_score, *uid));
+                } else if cmp_score.0 > flat_results.peek().unwrap().0.0 {
+                    flat_results.pop();
+                    flat_results.push((cmp_score, *uid));
+                }
+            }
+        }
+        
+        for (std::cmp::Reverse(u32_score), uid) in flat_results.into_iter() {
+            let score = u32_to_f32(u32_score);
+            if !results.iter().any(|r| r.id == uid) {
+                results.push(crate::SearchResult {
+                    id: uid,
+                    score,
+                    vector: if with_vector { get_vec(uid).map(|s| s.to_vec()) } else { None },
+                    payload: get_payload(uid),
+                });
             }
         }
         
@@ -498,13 +649,42 @@ fn train_lloyd_max(x_rot: &[f32], sq_k: usize, iters: usize) -> Vec<f32> {
             .collect()
     }
     
+    fn read_mmap(&self) -> Option<memmap2::Mmap> {
+        if let Some(ref file) = self.raw_file {
+            unsafe { memmap2::MmapOptions::new().map(file).ok() }
+        } else if let Ok(file) = std::fs::File::open(&self.raw_file_path) {
+            unsafe { memmap2::MmapOptions::new().map(&file).ok() }
+        } else {
+            None
+        }
+    }
+    
     pub fn get_all(&self) -> Vec<crate::PointDetail> {
         let mut results = vec![];
-        for (id, vec) in &self.vectors {
+        let mmap_opt = self.read_mmap();
+        let raw_f32: &[f32] = if let Some(ref mmap) = mmap_opt { unsafe { std::slice::from_raw_parts(mmap.as_ptr() as *const f32, mmap.len() / 4) } } else { &[] };
+        let payload_mmap = self.read_payload_mmap();
+        
+        for (&id, &row_idx) in &self.vector_offsets {
+            let start = row_idx * self.dim;
+            let end = start + self.dim;
+            let vec = if end <= raw_f32.len() { raw_f32[start..end].to_vec() } else { vec![0.0; self.dim] };
+            
+            let mut payload = None;
+            if let Some(&(offset, len)) = self.payload_offsets.get(&id) {
+                if let Some(ref mmap) = payload_mmap {
+                    let p_start = offset as usize;
+                    let p_end = p_start + len as usize;
+                    if p_end <= mmap.len() {
+                        payload = serde_json::from_slice(&mmap[p_start..p_end]).ok();
+                    }
+                }
+            }
+            
             results.push(crate::PointDetail {
-                id: *id,
-                vector: vec.clone(),
-                payload: self.payloads.get(id).cloned(),
+                id,
+                vector: vec,
+                payload,
             });
         }
         results

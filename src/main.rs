@@ -3,7 +3,7 @@ mod turboquant;
 
 use axum::{
     routing::{get, post, delete},
-    Router, Json, extract::{State, Path},
+    Router, Json, extract::{State, Path, DefaultBodyLimit},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -25,9 +25,15 @@ struct AddPointReq {
 }
 
 #[derive(Deserialize)]
+struct BatchAddPointReq {
+    points: Vec<AddPointReq>,
+}
+
+#[derive(Deserialize)]
 pub struct ConfigReq {
     pub n_list: Option<usize>,
     pub quantize_bits: usize,
+    pub max_training_samples: Option<usize>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -146,13 +152,16 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { axum::response::Redirect::permanent("/dashboard") }))
         .route("/dashboard", get(|| async { axum::response::Html(include_str!("dashboard.html")) }))
+        .route("/guide", get(|| async { axum::response::Html(include_str!("guide.html")) }))
         .route("/collections/default/points", get(list_points).post(add_point).delete(clear_points))
+        .route("/collections/default/points/batch", post(add_batch_points))
         .route("/collections/default/search", post(search_points))
         .route("/collections/default/search/batch", post(search_batch_points))
         .route("/collections/default/search/batch/bin", post(search_batch_points_bin))
         .route("/collections/default/save", post(save_points))
         .route("/collections/default/config", post(configure_index))
         .route("/collections/default/points/:id", delete(delete_point))
+        .layer(DefaultBodyLimit::max(1024 * 1024 * 100)) // Giới hạn 100MB để chống DDoS
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -165,6 +174,14 @@ async fn main() {
 async fn add_point(State(state): State<AppState>, Json(req): Json<AddPointReq>) -> Json<&'static str> {
     let mut engine = state.engine.write().await;
     engine.add(req.id, req.vector, req.payload);
+    Json("Success")
+}
+
+async fn add_batch_points(State(state): State<AppState>, Json(req): Json<BatchAddPointReq>) -> Json<&'static str> {
+    let mut engine = state.engine.write().await;
+    for point in req.points {
+        engine.add(point.id, point.vector, point.payload);
+    }
     Json("Success")
 }
 
@@ -307,6 +324,9 @@ async fn configure_index(State(state): State<AppState>, Json(req): Json<ConfigRe
     let mut engine = state.engine.write().await;
     engine.index_config.n_list = req.n_list;
     engine.index_config.quantize_bits = req.quantize_bits;
+    if req.max_training_samples.is_some() {
+        engine.index_config.max_training_samples = req.max_training_samples;
+    }
     
     // Đánh sập Index cũ và đẩy toàn bộ dữ liệu vào Buffer để ép Build lại với cấu hình mới
     engine.reset_index();

@@ -4,65 +4,193 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TurboQuant Web UI</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0b0f19; --panel-bg: #151b2b; --text-main: #f3f4f6;
-            --text-muted: #9ca3af; --accent: #3b82f6; --accent-hover: #2563eb;
+            --bg-base: #050505;
+            --bg-panel: rgba(20, 20, 20, 0.6);
+            --bg-panel-solid: #111111;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            --accent-color: #60a5fa;
+            --border: rgba(255, 255, 255, 0.08);
             --danger: #ef4444; --danger-hover: #dc2626; --success: #10b981;
-            --border: #1f2937;
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
+        
+        * { box-sizing: border-box; }
+        
         body {
-            margin: 0; padding: 0; background-color: var(--bg-color); color: var(--text-main);
-            font-family: 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden;
+            margin: 0; padding: 0; 
+            background-color: var(--bg-base); 
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            display: flex; height: 100vh; overflow: hidden;
+            -webkit-font-smoothing: antialiased;
         }
-        .sidebar { width: 260px; background: var(--panel-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-        .logo { font-size: 1.4rem; font-weight: 800; color: white; padding: 20px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .nav-list { padding: 15px; }
-        .nav-item { padding: 12px 15px; margin-bottom: 5px; border-radius: 8px; cursor: pointer; color: var(--text-muted); font-weight: 500; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
-        .nav-item:hover, .nav-item.active { background: #1e293b; color: white; }
-        .main-content { flex: 1; overflow-y: auto; background: var(--bg-color); }
-        .header { padding: 20px 30px; border-bottom: 1px solid var(--border); background: var(--panel-bg); display: flex; justify-content: space-between; align-items: center; }
-        .header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; }
-        .content-body { padding: 30px; }
-        .tab-content { display: none; animation: fadeIn 0.3s; }
+
+        .sidebar {
+            width: 280px;
+            background: var(--bg-panel);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-right: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            z-index: 10;
+        }
+
+        .logo {
+            font-size: 1.5rem; font-weight: 800; letter-spacing: -0.5px;
+            padding: 30px 24px;
+            display: flex; align-items: center; gap: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .logo-text {
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-list { padding: 24px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+        .nav-item {
+            padding: 14px 18px; border-radius: 12px; cursor: pointer;
+            color: var(--text-muted); font-weight: 500; font-size: 0.95rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; align-items: center; gap: 12px;
+            text-decoration: none;
+            border: 1px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            transform: translateX(4px);
+        }
+
+        .nav-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent-color);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .main-content { flex: 1; overflow-y: auto; position: relative; }
+
+        .header {
+            padding: 30px 40px;
+            background: rgba(5, 5, 5, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 5;
+        }
+
+        .header h1 { margin: 0; font-size: 1.8rem; font-weight: 700; letter-spacing: -0.5px; }
+
+        .content-body { padding: 40px; }
+
+        .tab-content { display: none; animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
         .tab-content.active { display: block; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .card { background: var(--panel-bg); padding: 25px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); }
-        h2 { margin-top: 0; font-weight: 600; font-size: 1.1rem; color: white; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; color: var(--text-muted); font-size: 0.9rem; }
-        input, textarea { width: 100%; padding: 10px 12px; background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border); border-radius: 6px; font-family: monospace; font-size: 0.95rem; box-sizing: border-box; transition: border-color 0.2s; }
-        input:focus, textarea:focus { border-color: var(--accent); outline: none; }
-        button { background: var(--accent); color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
-        button:hover { background: var(--accent-hover); }
-        button.danger { background: var(--danger); }
-        button.danger:hover { background: var(--danger-hover); }
-        button.small { padding: 6px 10px; font-size: 0.85rem; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--border); }
-        th { background: rgba(255,255,255,0.03); color: var(--text-muted); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        tr:hover td { background: rgba(255,255,255,0.02); }
-        pre { background: #0f131f; padding: 15px; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto; color: #a78bfa; font-size: 0.9rem; margin: 0; }
-        .stat-badge { display: inline-block; padding: 5px 10px; background: rgba(16, 185, 129, 0.1); color: var(--success); border-radius: 20px; font-size: 0.85rem; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.2); }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+
+        .card {
+            background: var(--bg-panel-solid);
+            padding: 32px; border-radius: 16px;
+            border: 1px solid var(--border);
+            margin-bottom: 30px;
+            box-shadow: var(--glass-shadow);
+        }
+
+        h2 { margin-top: 0; font-weight: 600; font-size: 1.2rem; color: white; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px;}
+        
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.95rem; }
+        
+        input, textarea { 
+            width: 100%; padding: 12px 16px; 
+            background: rgba(0,0,0,0.5); color: var(--text-main); 
+            border: 1px solid var(--border); border-radius: 8px; 
+            font-family: 'Fira Code', monospace; font-size: 0.95rem; 
+            box-sizing: border-box; transition: all 0.2s; 
+        }
+        input:focus, textarea:focus { border-color: var(--accent-color); outline: none; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        
+        button { 
+            background: var(--accent-gradient); color: white; border: none; 
+            padding: 12px 24px; border-radius: 8px; font-weight: 600; 
+            cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        button:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4); }
+        button:active { transform: translateY(1px); }
+        
+        button.danger { background: var(--danger); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
+        button.danger:hover { background: var(--danger-hover); box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4); filter: brightness(1); }
+        
+        button.small { padding: 8px 14px; font-size: 0.85rem; }
+        
+        table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 15px; }
+        th, td { padding: 14px 18px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { 
+            background: rgba(255,255,255,0.02); color: var(--text-muted); 
+            font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; 
+        }
+        tr:hover td { background: rgba(255,255,255,0.03); }
+        tr:last-child td { border-bottom: none; }
+        
+        pre { 
+            background: rgba(0,0,0,0.4); padding: 16px; border-radius: 8px; 
+            border: 1px solid var(--border); overflow-x: auto; 
+            color: #a78bfa; font-size: 0.9rem; margin: 0; font-family: 'Fira Code', monospace;
+        }
+        
+        .stat-badge { 
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; background: rgba(16, 185, 129, 0.1); 
+            color: var(--success); border-radius: 20px; font-size: 0.85rem; 
+            font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.2); 
+        }
         
         /* Modal Styles */
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
-        .modal.active { display: flex; }
-        .modal-content { background: var(--panel-bg); padding: 30px; border-radius: 12px; border: 1px solid var(--border); width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
-        .modal-header h2 { border: none; padding: 0; margin: 0; }
-        .close-btn { background: transparent; color: var(--text-muted); font-size: 1.2rem; padding: 0; margin: 0; cursor: pointer; }
-        .close-btn:hover { background: transparent; color: white; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; animation: fadeIn 0.2s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        .modal-content { 
+            background: var(--bg-panel-solid); padding: 32px; border-radius: 16px; 
+            border: 1px solid rgba(255,255,255,0.1); width: 650px; 
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); 
+            transform: scale(0.95); transition: transform 0.2s;
+        }
+        .modal.active .modal-content { transform: scale(1); }
+        
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+        .modal-header h2 { border: none; padding: 0; margin: 0; font-size: 1.4rem; }
+        
+        .close-btn { 
+            background: transparent; color: var(--text-muted); font-size: 1.4rem; 
+            padding: 4px 8px; margin: 0; cursor: pointer; box-shadow: none; 
+        }
+        .close-btn:hover { background: rgba(255,255,255,0.1); color: white; transform: none; box-shadow: none; }
     </style>
 </head>
 <body>
     <div class="sidebar">
-        <div class="logo">🚀 TurboQuant</div>
+        <div class="logo">
+            <span style="font-size: 1.8rem;">🚀</span>
+            <span class="logo-text">TurboQuant</span>
+        </div>
         <div class="nav-list">
-            <div class="nav-item active" onclick="switchTab('collections', this)">🗄️ Collections</div>
-            <div class="nav-item" onclick="switchTab('explorer', this); uiFetchAll()">🔍 Data Explorer (CRUD)</div>
-            <div class="nav-item" onclick="switchTab('console', this)">📡 REST Console</div>
+            <div class="nav-item active" onclick="switchTab('collections', this)"><span style="font-size: 1.2rem;">🗄️</span> Collections</div>
+            <div class="nav-item" onclick="switchTab('explorer', this); uiFetchAll()"><span style="font-size: 1.2rem;">🔍</span> Data Explorer</div>
+            <div class="nav-item" onclick="switchTab('console', this)"><span style="font-size: 1.2rem;">📡</span> REST Console</div>
+            <a href="/guide" class="nav-item"><span style="font-size: 1.2rem;">📚</span> API Guide</a>
         </div>
     </div>
     
@@ -103,9 +231,22 @@
                             <button onclick="uiFetchAll()">🔄 Refresh Data</button>
                         </div>
                     </div>
-                    <div style="max-height: 250px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                        <div style="color: var(--text-muted); font-size: 0.9rem;">
+                            Show 
+                            <select id="pageSize" onchange="changePageSize(this.value)" style="background: rgba(0,0,0,0.5); color: var(--text-main); border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; margin: 0 5px; font-family: 'Inter', sans-serif; cursor: pointer; outline: none;">
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select> 
+                            entries
+                        </div>
+                        <div id="paginationInfo" style="color: var(--text-muted); font-size: 0.9rem; font-weight: 500;">Showing 0 to 0 of 0 entries</div>
+                    </div>
+                    <div style="overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.2);">
                         <table style="margin-top:0;">
-                            <thead style="position: sticky; top: 0; background: var(--panel-bg); z-index: 10;">
+                            <thead style="position: sticky; top: 0; background: var(--bg-panel-solid); z-index: 10;">
                                 <tr>
                                     <th width="10%">ID</th>
                                     <th width="30%">Vector</th>
@@ -117,6 +258,10 @@
                                 <tr><td colspan="4" style="text-align:center; color:var(--text-muted);">Click Refresh Data to fetch vectors...</td></tr>
                             </tbody>
                         </table>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap: 10px; margin-top: 20px;">
+                        <button class="small" onclick="changePage(-1)" id="prevPageBtn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-main); box-shadow: none; padding: 8px 16px;">Previous</button>
+                        <button class="small" onclick="changePage(1)" id="nextPageBtn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-main); box-shadow: none; padding: 8px 16px;">Next</button>
                     </div>
                 </div>
 
@@ -171,6 +316,14 @@
                 <label>Point ID (Integer)</label>
                 <input type="number" id="addId" value="1001">
             </div>
+            
+            <div id="vectorVisContainer" style="display: none; margin-bottom: 20px;">
+                <label style="display:flex; justify-content:space-between; align-items:center;">
+                    <span><span style="color:#60a5fa;">■</span> Vector Space Simulation (Spectrum)</span>
+                    <span id="vectorDimInfo" style="color:var(--text-muted); font-size:0.8rem; font-family:'Fira Code', monospace; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px;"></span>
+                </label>
+                <canvas id="vectorVis" width="586" height="120" style="background: rgba(0,0,0,0.6); border: 1px solid var(--border); border-radius: 8px; width: 100%; box-shadow: inset 0 4px 15px rgba(0,0,0,0.8); margin-top: 5px;"></canvas>
+            </div>
             <div class="form-group">
                 <label>Vector (Array of floats)</label>
                 <input type="text" id="addVector" value="[0.1, 0.2, 0.3, 0.4]">
@@ -193,7 +346,83 @@
             document.getElementById('pageTitle').innerText = el.innerText.substring(3);
         }
 
-        function openModal() { document.getElementById('addModal').classList.add('active'); document.getElementById('addStatus').innerText = ''; }
+        function openModal(id = null) { 
+            let modalTitle = document.querySelector('#addModal .modal-header h2');
+            let btn = document.querySelector('#addModal button[onclick="uiAddPoint()"]');
+            document.getElementById('addStatus').innerText = ''; 
+            
+            if (id !== null) {
+                // Edit mode
+                let point = globalData.find(p => p.id === id);
+                if (point) {
+                    modalTitle.innerText = "✏️ Edit Point Details";
+                    document.getElementById('addId').value = point.id;
+                    document.getElementById('addId').readOnly = true;
+                    document.getElementById('addVector').value = JSON.stringify(point.vector);
+                    document.getElementById('addPayload').value = point.payload ? JSON.stringify(point.payload, null, 2) : "{}";
+                    btn.innerText = "Save Changes";
+                    
+                    document.getElementById('vectorVisContainer').style.display = point.vector ? 'block' : 'none';
+                    if (point.vector) {
+                        document.getElementById('vectorDimInfo').innerText = `${point.vector.length} Dimensions`;
+                        drawVectorVisualizer(point.vector);
+                    }
+                }
+            } else {
+                // Add mode
+                modalTitle.innerText = "➕ Add Point";
+                document.getElementById('addId').value = 1001;
+                document.getElementById('addId').readOnly = false;
+                document.getElementById('addVector').value = "[0.1, 0.2, 0.3, 0.4]";
+                document.getElementById('addPayload').value = '{"name": "TurboQuant", "type": "Database"}';
+                btn.innerText = "Upsert Point";
+                document.getElementById('vectorVisContainer').style.display = 'none';
+            }
+            
+            document.getElementById('addModal').classList.add('active'); 
+        }
+
+        function drawVectorVisualizer(vector) {
+            let canvas = document.getElementById('vectorVis');
+            let ctx = canvas.getContext('2d');
+            let w = canvas.width;
+            let h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            
+            let max = Math.max(...vector.map(Math.abs));
+            if (max === 0) max = 1;
+            
+            let barW = w / vector.length;
+            
+            // Draw center baseline
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(0, h/2); ctx.lineTo(w, h/2); ctx.stroke();
+            
+            // Draw grid lines
+            ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+            for(let i=1; i<=4; i++) {
+                ctx.beginPath(); ctx.moveTo(0, (h/4)*i); ctx.lineTo(w, (h/4)*i); ctx.stroke();
+            }
+            
+            for(let i=0; i<vector.length; i++) {
+                let val = vector[i];
+                let norm = Math.abs(val) / max;
+                let barH = norm * (h / 2);
+                
+                let x = i * barW;
+                let y = val >= 0 ? (h/2) - barH : (h/2);
+                
+                let gradient = ctx.createLinearGradient(0, 0, 0, h);
+                gradient.addColorStop(0, '#60a5fa');
+                gradient.addColorStop(0.5, '#a855f7');
+                gradient.addColorStop(1, '#ef4444');
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x, y, Math.max(1, barW - 0.5), barH);
+            }
+        }
+
         function closeModal() { document.getElementById('addModal').classList.remove('active'); }
 
         async function uiAddPoint() {
@@ -240,27 +469,82 @@
             } catch(e) { alert("Lỗi khi lưu: " + e.message); }
         }
 
+        let globalData = [];
+        let currentPage = 1;
+        let pageSize = 10;
+
+        function changePageSize(size) {
+            pageSize = parseInt(size);
+            currentPage = 1;
+            renderTable();
+        }
+
+        function changePage(delta) {
+            let totalPages = Math.ceil(globalData.length / pageSize);
+            currentPage += delta;
+            if (currentPage < 1) currentPage = 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            renderTable();
+        }
+
+        function renderTable() {
+            let tbody = document.getElementById('allPointsTable');
+            let info = document.getElementById('paginationInfo');
+            let prevBtn = document.getElementById('prevPageBtn');
+            let nextBtn = document.getElementById('nextPageBtn');
+
+            if(globalData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 30px;">Chưa có vector nào trong cơ sở dữ liệu.</td></tr>';
+                info.innerText = "Showing 0 to 0 of 0 entries";
+                prevBtn.disabled = true;
+                nextBtn.disabled = true;
+                prevBtn.style.opacity = '0.4';
+                nextBtn.style.opacity = '0.4';
+                prevBtn.style.cursor = 'not-allowed';
+                nextBtn.style.cursor = 'not-allowed';
+                return;
+            }
+
+            let totalPages = Math.ceil(globalData.length / pageSize);
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            let start = (currentPage - 1) * pageSize;
+            let end = Math.min(start + pageSize, globalData.length);
+            let pageData = globalData.slice(start, end);
+
+            tbody.innerHTML = '';
+            pageData.forEach(item => {
+                let tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="font-weight:bold; color: var(--accent-color);">${item.id}</td>
+                    <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.8rem;">[${item.vector ? item.vector.slice(0, 3).map(v => v.toFixed(3)).join(', ') : 'null'}, ...]</pre></td>
+                    <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.85rem;">${JSON.stringify(item.payload, null, 2)}</pre></td>
+                    <td style="white-space: nowrap;">
+                        <button class="small" style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.5); color: #c4b5fd; box-shadow: none; padding: 6px 12px; margin-right: 5px;" onclick="openModal(${item.id})">✏️ Sửa</button>
+                        <button class="danger small" style="padding: 6px 12px; box-shadow: none;" onclick="deletePoint(${item.id})">🗑️ Xóa</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            info.innerText = `Showing ${start + 1} to ${end} of ${globalData.length} entries`;
+            
+            prevBtn.disabled = (currentPage === 1);
+            nextBtn.disabled = (currentPage === totalPages);
+            prevBtn.style.opacity = prevBtn.disabled ? '0.4' : '1';
+            nextBtn.style.opacity = nextBtn.disabled ? '0.4' : '1';
+            prevBtn.style.cursor = prevBtn.disabled ? 'not-allowed' : 'pointer';
+            nextBtn.style.cursor = nextBtn.disabled ? 'not-allowed' : 'pointer';
+        }
+
         async function uiFetchAll() {
             let tbody = document.getElementById('allPointsTable');
-            tbody.innerHTML = '<tr><td colspan="4">Đang tải...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 30px;">Đang tải dữ liệu...</td></tr>';
             try {
                 let res = await fetch('/collections/default/points');
-                let json = await res.json();
-                if(json.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Chưa có vector nào trong cơ sở dữ liệu.</td></tr>';
-                    return;
-                }
-                tbody.innerHTML = '';
-                json.forEach(item => {
-                    let tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td style="font-weight:bold;">${item.id}</td>
-                        <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.8rem;">[${item.vector.slice(0, 3).map(v => v.toFixed(3)).join(', ')}, ...]</pre></td>
-                        <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.85rem;">${JSON.stringify(item.payload, null, 2)}</pre></td>
-                        <td><button class="danger small" onclick="deletePoint(${item.id})">Xóa</button></td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                globalData = await res.json();
+                renderTable();
             } catch(e) { tbody.innerHTML = `<tr><td colspan="4" style="color:var(--danger)">Lỗi: ${e.message}</td></tr>`; }
         }
 
@@ -291,7 +575,7 @@
                     tr.innerHTML = `
                         <td style="color:var(--success); font-weight:bold;">${item.score.toFixed(4)}</td>
                         <td>${item.id}</td>
-                        <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.8rem;">[${item.vector.slice(0, 3).map(v => v.toFixed(3)).join(', ')}, ...]</pre></td>
+                        <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.8rem;">[${item.vector ? item.vector.slice(0, 3).map(v => v.toFixed(3)).join(', ') : 'null'}, ...]</pre></td>
                         <td><pre style="padding:5px; margin:0; background:transparent; border:none; font-size:0.85rem;">${JSON.stringify(item.payload, null, 2)}</pre></td>
                     `;
                     tbody.appendChild(tr);
