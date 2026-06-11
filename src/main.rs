@@ -146,6 +146,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { axum::response::Redirect::permanent("/dashboard") }))
         .route("/dashboard", get(|| async { axum::response::Html(include_str!("dashboard.html")) }))
+        .route("/guide", get(|| async { axum::response::Html(include_str!("guide.html")) }))
         .route("/collections/default/points", get(list_points).post(add_point).delete(clear_points))
         .route("/collections/default/search", post(search_points))
         .route("/collections/default/search/batch", post(search_batch_points))

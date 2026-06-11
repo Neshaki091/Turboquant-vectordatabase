@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TurboQuant API Guide</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #050505;
+            --bg-panel: rgba(20, 20, 20, 0.6);
+            --bg-panel-solid: #111111;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            --accent-color: #60a5fa;
+            --border: rgba(255, 255, 255, 0.08);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        
+        * { box-sizing: border-box; }
+        
+        body {
+            margin: 0; padding: 0; 
+            background-color: var(--bg-base); 
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            display: flex; height: 100vh; overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .sidebar {
+            width: 280px;
+            background: var(--bg-panel);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-right: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            z-index: 10;
+        }
+
+        .logo {
+            font-size: 1.5rem; font-weight: 800; letter-spacing: -0.5px;
+            padding: 30px 24px;
+            display: flex; align-items: center; gap: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .logo-text {
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-list { padding: 24px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+        .nav-item {
+            padding: 14px 18px; border-radius: 12px; cursor: pointer;
+            color: var(--text-muted); font-weight: 500; font-size: 0.95rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; align-items: center; gap: 12px;
+            text-decoration: none;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+            transform: translateX(4px);
+        }
+
+        .nav-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent-color);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .main-content { flex: 1; overflow-y: auto; position: relative; }
+
+        .header {
+            padding: 30px 40px;
+            background: rgba(5, 5, 5, 0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 5;
+        }
+
+        .header h1 { margin: 0; font-size: 1.8rem; font-weight: 700; letter-spacing: -0.5px; }
+
+        .content-body { padding: 40px; max-width: 1000px; margin: 0 auto; }
+
+        .card {
+            background: var(--bg-panel-solid);
+            padding: 32px; border-radius: 16px;
+            border: 1px solid var(--border);
+            margin-bottom: 30px;
+            box-shadow: var(--glass-shadow);
+            animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        .card:nth-child(1) { animation-delay: 0.1s; }
+        .card:nth-child(2) { animation-delay: 0.2s; }
+        .card:nth-child(3) { animation-delay: 0.3s; }
+        .card:nth-child(4) { animation-delay: 0.4s; }
+
+        @keyframes slideUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h2 { 
+            margin-top: 0; font-weight: 600; font-size: 1.4rem; 
+            color: var(--text-main); border-bottom: 1px solid var(--border); 
+            padding-bottom: 16px; margin-bottom: 24px;
+        }
+        
+        h3 { font-size: 1.1rem; color: var(--accent-color); margin-top: 24px; }
+        
+        p { line-height: 1.6; color: var(--text-muted); font-size: 0.95rem; }
+
+        pre { 
+            background: rgba(0, 0, 0, 0.5); 
+            padding: 20px; border-radius: 12px; 
+            border: 1px solid var(--border); 
+            overflow-x: auto; 
+            color: #e2e8f0; font-family: 'Fira Code', monospace; font-size: 0.9rem; 
+            margin: 16px 0;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        code {
+            font-family: 'Fira Code', monospace;
+            background: rgba(255,255,255,0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: #a78bfa;
+        }
+
+        .endpoint {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.05);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+        }
+        
+        .method-post { color: #10b981; font-weight: bold; margin-right: 8px; }
+        .method-get { color: #3b82f6; font-weight: bold; margin-right: 8px; }
+        .method-delete { color: #ef4444; font-weight: bold; margin-right: 8px; }
+
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <span style="font-size: 1.8rem;">🚀</span>
+            <span class="logo-text">TurboQuant</span>
+        </div>
+        <div class="nav-list">
+            <a href="/dashboard" class="nav-item">
+                <span style="font-size: 1.2rem;">⚡</span> Dashboard
+            </a>
+            <a href="/guide" class="nav-item active">
+                <span style="font-size: 1.2rem;">📚</span> API Guide
+            </a>
+        </div>
+    </div>
+    
+    <div class="main-content">
+        <div class="header">
+            <h1>TurboQuant API Guide</h1>
+        </div>
+
+        <div class="content-body">
+            <div class="card">
+                <h2>1. Introduction</h2>
+                <p>Welcome to the TurboQuant REST API documentation. TurboQuant provides a blazing fast vector database powered by Rust and SIMD optimizations. Use the endpoints below to manage and query your high-dimensional vectors.</p>
+                <p>Base URL: <code>http://localhost:6333</code></p>
+            </div>
+
+            <div class="card">
+                <h2>2. Insert / Update Vectors</h2>
+                <div class="endpoint"><span class="method-post">POST</span> /collections/default/points</div>
+                <p>Adds a new vector to the index or updates an existing one.</p>
+                <pre>{
+  "id": 1001,
+  "vector": [0.1, 0.2, 0.3, 0.4],
+  "payload": {
+    "name": "Document 1",
+    "type": "Article"
+  }
+}</pre>
+            </div>
+
+            <div class="card">
+                <h2>3. Search Vectors (KNN)</h2>
+                <div class="endpoint"><span class="method-post">POST</span> /collections/default/search</div>
+                <p>Retrieves the nearest neighbors for a given query vector. TurboQuant automatically switches between Flat exact search and IVF approximated search based on parameters.</p>
+                <pre>{
+  "vector": [0.1, 0.2, 0.3, 0.4],
+  "top_k": 5,
+  "params": {
+    "exact": false,
+    "n_probe": 10,
+    "rerank": true,
+    "rerank_factor": 10
+  }
+}</pre>
+            </div>
+
+            <div class="card">
+                <h2>4. Batch Search</h2>
+                <div class="endpoint"><span class="method-post">POST</span> /collections/default/search/batch</div>
+                <p>Send multiple queries in a single request to maximize throughput.</p>
+                <pre>{
+  "vectors": [
+    [0.1, 0.2, 0.3, 0.4],
+    [0.5, 0.6, 0.7, 0.8]
+  ],
+  "top_k": 5,
+  "params": {
+    "n_probe": 10
+  }
+}</pre>
+            </div>
+
+            <div class="card">
+                <h2>5. Manage Data</h2>
+                <h3>Retrieve All Points</h3>
+                <div class="endpoint"><span class="method-get">GET</span> /collections/default/points</div>
+                <p>Returns a list of all vectors currently stored in the memory.</p>
+
+                <h3>Delete Single Point</h3>
+                <div class="endpoint"><span class="method-delete">DELETE</span> /collections/default/points/{id}</div>
+                <p>Deletes the specified vector by its integer ID.</p>
+
+                <h3>Clear All Points</h3>
+                <div class="endpoint"><span class="method-delete">DELETE</span> /collections/default/points</div>
+                <p>Completely wipes the current collection.</p>
+
+                <h3>Save to Disk</h3>
+                <div class="endpoint"><span class="method-post">POST</span> /collections/default/save</div>
+                <p>Flushes the in-memory index to disk (in <code>data/tq_index</code>) for persistence.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
