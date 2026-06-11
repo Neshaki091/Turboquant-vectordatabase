@@ -1,6 +1,0 @@
-{
-  "dim": 384,
-  "n_list": 256,
-  "n_vectors": 12450,
-  "quantize_bits": 4
-}

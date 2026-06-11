@@ -7,6 +7,11 @@ def chunked(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
+def print_latency_stats(latencies):
+    if not latencies: return
+    lats = np.array(latencies) * 1000 # convert to ms
+    print(f"Latency (ms) -> Mean: {np.mean(lats):.2f} | P50: {np.percentile(lats, 50):.2f} | P90: {np.percentile(lats, 90):.2f} | P95: {np.percentile(lats, 95):.2f} | P99: {np.percentile(lats, 99):.2f}")
+
 def main():
     parser = argparse.ArgumentParser(description="Test TurboQuant Search Performance")
     parser.add_argument("--file", type=str, default=r"e:\ARQ-RAG\ARQ-RAG-turboquant-main\tq_java_test\Qasper_E5\corpus_embedded_norm.npy", help="Path to the .npy file")
@@ -40,6 +45,7 @@ def main():
     print("="*50)
     
     flat_results = []
+    flat_latencies = []
     start_time = time.time()
     
     if args.batch_size > 1:
@@ -53,7 +59,9 @@ def main():
                     "with_vector": args.with_vector
                 }
             }
+            t0 = time.time()
             res = requests.post(batch_url, json=payload)
+            flat_latencies.append(time.time() - t0)
             flat_results.extend(res.json())
     else:
         for q in queries:
@@ -65,12 +73,15 @@ def main():
                     "with_vector": args.with_vector
                 }
             }
+            t0 = time.time()
             res = requests.post(args.url, json=payload)
+            flat_latencies.append(time.time() - t0)
             flat_results.append(res.json())
         
     flat_time = time.time() - start_time
     print(f"Xong Flat Search {len(queries)} queries trong {flat_time:.4f} giay")
     print(f"QPS (Queries Per Second): {len(queries) / flat_time:.1f}")
+    print_latency_stats(flat_latencies)
 
     # ==========================================
     # 2. Test TurboQuant 4-bit Search (Siêu tốc độ)
@@ -80,6 +91,7 @@ def main():
     print("="*50)
     
     tq_results = []
+    tq_latencies = []
     start_time = time.time()
     
     if args.batch_size > 1:
@@ -96,7 +108,9 @@ def main():
                     "with_vector": args.with_vector
                 }
             }
+            t0 = time.time()
             res = requests.post(batch_url, json=payload)
+            tq_latencies.append(time.time() - t0)
             tq_results.extend(res.json())
     else:
         for q in queries:
@@ -111,12 +125,15 @@ def main():
                     "with_vector": args.with_vector
                 }
             }
+            t0 = time.time()
             res = requests.post(args.url, json=payload)
+            tq_latencies.append(time.time() - t0)
             tq_results.append(res.json())
         
     tq_time = time.time() - start_time
     print(f"Xong TurboQuant Search {len(queries)} queries trong {tq_time:.4f} giay")
     print(f"QPS (Queries Per Second): {len(queries) / tq_time:.1f}")
+    print_latency_stats(tq_latencies)
     
     print(f"\n>>> TOC DO CUA TURBOQUANT (JSON): NHANH HON {flat_time / tq_time:.1f} LAN!")
 
@@ -129,6 +146,7 @@ def main():
     
     import struct
     tq_bin_results = []
+    tq_bin_latencies = []
     start_time = time.time()
     
     bin_url = args.url.replace("/search", "/search/batch/bin")
@@ -141,7 +159,9 @@ def main():
         query_bytes = np.array(chunk, dtype=np.float32).tobytes()
         payload = header + query_bytes
         
+        t0 = time.time()
         res = requests.post(bin_url, data=payload, headers={"Content-Type": "application/octet-stream"})
+        tq_bin_latencies.append(time.time() - t0)
         res_bytes = res.content
         
         # Parse binary response
@@ -167,6 +187,7 @@ def main():
     tq_bin_time = time.time() - start_time
     print(f"Xong TurboQuant Binary Search {len(queries)} queries trong {tq_bin_time:.4f} giay")
     print(f"QPS (Queries Per Second): {len(queries) / tq_bin_time:.1f}")
+    print_latency_stats(tq_bin_latencies)
     
     print(f"\n>>> TOC DO CUA TURBOQUANT BINARY: NHANH HON {flat_time / tq_bin_time:.1f} LAN!")
     print(f">>> SOI SANG: BINARY NHANH HON JSON {tq_time / tq_bin_time:.2f} LAN!")
